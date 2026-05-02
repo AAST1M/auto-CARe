@@ -1,0 +1,9 @@
+{
+  "name": "Auto-Care AI",
+  "description": "An integrated AI-powered platform for automotive diagnostics, workshop discovery, and real-time winch negotiation.",
+  "requestFramePermissions": [
+    "geolocation",
+    "microphone"
+  ],
+  "majorCapabilities": []
+}
