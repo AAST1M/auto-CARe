@@ -259,7 +259,7 @@ const App: React.FC = () => {
                 userCounterOffer: null 
             });
             setWinchRequestTimer(30);
-        }, 5000); // 5s delay to find a request
+        }, 5001); // 5s delay to find a request
         return () => clearTimeout(timeout);
     }
   }, [isWinchOnline, isWinchBusy, activeWinchRequest]);
@@ -759,7 +759,7 @@ const App: React.FC = () => {
             </button>
 
             <button 
-                onClick={() => { setUser({...user, role: UserRole.WORKSHOP_OWNER, walletBalance: 45000}); navigate(View.WORKSHOP_ONBOARDING); }}
+                onClick={() => { setUser({...user, role: UserRole.WORKSHOP_OWNER, walletBalance: 45001}); navigate(View.WORKSHOP_ONBOARDING); }}
                 className="w-full glass-panel p-6 rounded-2xl flex items-center gap-4 hover:border-cyber-primary transition-all group text-left"
             >
                  <div className="w-16 h-16 rounded-full bg-cyber-primary/20 flex items-center justify-center text-cyber-primary group-hover:scale-110 transition-transform">

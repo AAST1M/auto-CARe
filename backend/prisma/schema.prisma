@@ -1,0 +1,75 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String        @id @default(uuid())
+  email          String        @unique
+  passwordHash   String
+  name           String?
+  phone          String?
+  gender         String?
+  dob            String?
+  role           String        @default("USER") // USER, WINCH_DRIVER, WORKSHOP_OWNER
+  walletBalance  Float         @default(0)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  workshops      Workshop[]    @relation("OwnerWorkshops")
+  appointments   Appointment[] @relation("UserAppointments")
+}
+
+model Workshop {
+  id            String        @id @default(uuid())
+  ownerId       String
+  name          String
+  rating        Float         @default(0)
+  distance      String?
+  specialty     String?
+  priceEstimate String?
+  image         String?
+  address       String?
+  hours         String?
+  services      String // Comma separated string for simplicity in SQLite, or JSON if supported
+  description   String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  owner         User          @relation("OwnerWorkshops", fields: [ownerId], references: [id])
+  appointments  Appointment[] @relation("WorkshopAppointments")
+}
+
+model Appointment {
+  id            String   @id @default(uuid())
+  userId        String
+  workshopId    String
+  serviceType   String
+  carDetails    String?
+  time          String
+  status        String   @default("Pending") // Pending, Confirmed, Checked-In, Completed, Cancelled
+  price         Float
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user          User     @relation("UserAppointments", fields: [userId], references: [id])
+  workshop      Workshop @relation("WorkshopAppointments", fields: [workshopId], references: [id])
+}
+
+model WinchOffer {
+  id            String   @id @default(uuid())
+  driverName    String
+  price         Float
+  eta           String
+  rating        Float    @default(0)
+  vehicle       String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
