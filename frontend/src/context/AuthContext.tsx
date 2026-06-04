@@ -15,13 +15,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
 
   useEffect(() => {
-    // In a real app, validate token on load and fetch user profile
-    if (token) {
-      // Mock loading user from token for now if no user object exists
-      if (!user) {
-         setUser({ name: 'User', email: '', phone: '', gender: '', dob: '', role: 'USER', walletBalance: 0, bookings: [] });
+    const fetchMe = async () => {
+      if (token) {
+        try {
+          const res = await fetch('http://localhost:5001/api/auth/me', {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          if (res.ok) {
+            const userData = await res.json();
+            setUser(userData);
+          } else {
+            logout();
+          }
+        } catch (err) {
+          console.error('Error fetching user profile:', err);
+        }
       }
-    }
+    };
+    fetchMe();
   }, [token]);
 
   const login = (newToken: string, userData: any) => {

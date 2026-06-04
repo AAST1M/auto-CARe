@@ -49,6 +49,7 @@ import {
 } from 'lucide-react';
 import { View, Message, Workshop, WinchOffer, CarType, UserProfile, UserBooking, UserRole, WorkshopAppointment } from './types';
 import { diagnoseCarIssue, MediaInput } from './services/geminiService';
+import { useAuth } from './context/AuthContext';
 
 // --- Mock Data ---
 const MOCK_WORKSHOPS: Workshop[] = [
@@ -125,12 +126,30 @@ const INITIAL_WINCH_OFFERS: WinchOffer[] = [
 ];
 
 const App: React.FC = () => {
+  const { user: authUser, token } = useAuth();
+
   // --- Theme State ---
   const [isDarkMode, setIsDarkMode] = useState(true);
 
   // --- App State ---
-  const [view, setView] = useState<View>(View.ONBOARDING);
-  const [history, setHistory] = useState<View[]>([View.ONBOARDING]);
+  const [view, setView] = useState<View>(() => {
+    const localToken = localStorage.getItem('token');
+    if (localToken && authUser) {
+      if (authUser.role === 'WINCH_DRIVER') return View.WINCH_DASHBOARD;
+      if (authUser.role === 'WORKSHOP_OWNER') return View.WORKSHOP_DASHBOARD;
+      return View.HOME;
+    }
+    return View.ONBOARDING;
+  });
+  const [history, setHistory] = useState<View[]>(() => {
+    const localToken = localStorage.getItem('token');
+    if (localToken && authUser) {
+      if (authUser.role === 'WINCH_DRIVER') return [View.WINCH_DASHBOARD];
+      if (authUser.role === 'WORKSHOP_OWNER') return [View.WORKSHOP_DASHBOARD];
+      return [View.HOME];
+    }
+    return [View.ONBOARDING];
+  });
   
   // Location State
   const [locationName, setLocationName] = useState('Locating...');
@@ -138,14 +157,14 @@ const App: React.FC = () => {
 
   // User Profile State
   const [user, setUser] = useState<UserProfile>({
-    name: '',
-    email: '',
-    phone: '',
-    gender: '',
-    dob: '',
-    role: null,
-    walletBalance: 0,
-    bookings: []
+    name: authUser?.name || '',
+    email: authUser?.email || '',
+    phone: authUser?.phone || '',
+    gender: authUser?.gender || '',
+    dob: authUser?.dob || '',
+    role: authUser?.role || null,
+    walletBalance: authUser?.walletBalance || 0,
+    bookings: authUser?.bookings || []
   });
 
   // Chat State
@@ -202,7 +221,78 @@ const App: React.FC = () => {
       { id: 2, number: '**** **** **** 8888', type: 'MasterCard' }
   ]);
 
-  // --- Effects ---
+  useEffect(() => {
+    if (authUser) {
+      setUser(prev => ({
+        ...prev,
+        name: authUser.name || prev.name,
+        email: authUser.email || prev.email,
+        phone: authUser.phone || prev.phone,
+        gender: authUser.gender || prev.gender,
+        dob: authUser.dob || prev.dob,
+        role: authUser.role || prev.role,
+        walletBalance: authUser.walletBalance ?? prev.walletBalance,
+        bookings: authUser.bookings || prev.bookings
+      }));
+      
+      setView(currentView => {
+        if (currentView === View.ONBOARDING || currentView === View.LOGIN || currentView === View.SIGN_UP) {
+          if (authUser.role === 'WINCH_DRIVER') return View.WINCH_DASHBOARD;
+          if (authUser.role === 'WORKSHOP_OWNER') return View.WORKSHOP_DASHBOARD;
+          return View.HOME;
+        }
+        return currentView;
+      });
+    }
+  }, [authUser]);
+
+  const fetchAppointments = async () => {
+    const tokenVal = localStorage.getItem('token');
+    if (!tokenVal) return;
+
+    try {
+      const response = await fetch('http://localhost:5001/api/workshops/appointments', {
+        headers: {
+          'Authorization': `Bearer ${tokenVal}`
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const currentRole = authUser?.role || user.role;
+        if (currentRole === 'WORKSHOP_OWNER') {
+          const mappedAppts = data.map((appt: any) => ({
+            id: appt.id,
+            customerName: appt.user?.name || 'Customer',
+            carDetails: appt.carDetails || 'My Car',
+            serviceType: appt.serviceType || 'General Inspection',
+            time: appt.time || '12:00 PM',
+            status: appt.status || 'Pending',
+            price: appt.price || 450
+          }));
+          setWorkshopAppointments(mappedAppts);
+        } else {
+          const mappedBookings = data.map((appt: any) => ({
+            id: appt.id,
+            serviceName: appt.workshop?.name || 'Workshop',
+            date: appt.time,
+            status: appt.status || 'Pending',
+            price: `${appt.price}.00 EGP`
+          }));
+          setUser(prev => ({ ...prev, bookings: mappedBookings }));
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching appointments:', error);
+    }
+  };
+
+  useEffect(() => {
+    const currentRole = authUser?.role || user.role;
+    if (token && currentRole) {
+      fetchAppointments();
+    }
+  }, [token, authUser?.role, user.role]);
+
   useEffect(() => {
     // Auto scroll chat
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -414,37 +504,39 @@ const App: React.FC = () => {
   };
 
   // Workshop Booking Logic
-  const handleConfirmBooking = () => {
+  const handleConfirmBooking = async () => {
     if (selectedWorkshop) {
       const dates = ['Mon 12', 'Tue 13', 'Wed 14'];
       const dateStr = `${dates[selectedDateIndex]} - ${selectedTimeSlot}`;
-      
-      // 1. Create User Booking
-      const newBooking: UserBooking = {
-        id: Date.now().toString(),
-        serviceName: selectedWorkshop.name,
-        date: dateStr,
-        status: 'Confirmed', // Automatically confirmed for prototype flow
-        price: selectedWorkshop.priceEstimate === '$$' ? '450.00 EGP' : '850.00 EGP'
-      };
-      
-      // 2. Add to User Profile (This ensures it shows on Dashboard)
-      setUser(prev => ({ ...prev, bookings: [newBooking, ...prev.bookings] }));
+      const priceVal = selectedWorkshop.priceEstimate === '$$' ? 450 : 850;
+      const carInfo = `${user.carBrand || 'My Car'} ${user.carModel || ''}`;
 
-      // 3. Add to Workshop Dashboard (Simulating backend)
-      const newAppointment: WorkshopAppointment = {
-          id: `appt-${Date.now()}`,
-          customerName: user.name || 'Current User',
-          carDetails: `${user.carBrand || 'My Car'} ${user.carModel || ''}`,
-          serviceType: 'General Inspection',
-          time: selectedTimeSlot,
-          status: 'Confirmed',
-          price: selectedWorkshop.priceEstimate === '$$' ? 450 : 850
-      };
-      setWorkshopAppointments(prev => [newAppointment, ...prev]);
+      try {
+        const tokenVal = localStorage.getItem('token');
+        const response = await fetch(`http://localhost:5001/api/workshops/${selectedWorkshop.id}/book`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${tokenVal}`
+          },
+          body: JSON.stringify({
+            serviceType: 'General Inspection',
+            time: dateStr,
+            carDetails: carInfo,
+            price: priceVal
+          })
+        });
 
-      // 4. Navigate to Success
-      navigate(View.SUCCESS);
+        if (!response.ok) {
+          throw new Error('Failed to book appointment on backend');
+        }
+
+        await fetchAppointments();
+        navigate(View.SUCCESS);
+      } catch (error) {
+        console.error('Error booking appointment:', error);
+        alert('Could not book appointment. Please try again.');
+      }
     }
   };
 
@@ -481,28 +573,56 @@ const App: React.FC = () => {
   };
 
   // Workshop Dashboard Logic (Owner Side)
-  const handleWorkshopAction = (id: string, action: 'Check-In' | 'Reschedule' | 'Accept' | 'Decline') => {
-      setWorkshopAppointments(prev => prev.map(appt => {
-          if (appt.id !== id) return appt;
+  const handleWorkshopAction = async (id: string, action: 'Check-In' | 'Reschedule' | 'Accept' | 'Decline') => {
+    const tokenVal = localStorage.getItem('token');
+    if (!tokenVal) return;
 
-          if (action === 'Check-In') {
-              // Add to wallet & Start Tracking
-              setUser(userPrev => ({...userPrev, walletBalance: userPrev.walletBalance + appt.price}));
-              setCarsInWorkshop(prevCars => [...prevCars, { id: Date.now().toString(), model: appt.carDetails, plate: 'NEW 123', status: 'Diagnostics', progress: 0 }]);
-              return { ...appt, status: 'Checked-In' as const };
-          }
-          if (action === 'Reschedule') {
-              alert(`Rescheduling request sent for ${appt.customerName}`);
-              return appt; 
-          }
-          if (action === 'Accept') {
-              return { ...appt, status: 'Confirmed' as const };
-          }
-          if (action === 'Decline') {
-              return { ...appt, status: 'Cancelled' as const };
-          }
-          return appt;
-      }));
+    let newStatus: string | null = null;
+    if (action === 'Accept') newStatus = 'Confirmed';
+    if (action === 'Decline') newStatus = 'Cancelled';
+    if (action === 'Check-In') newStatus = 'Checked-In';
+
+    if (newStatus) {
+      try {
+        const response = await fetch(`http://localhost:5001/api/workshops/appointments/${id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${tokenVal}`
+          },
+          body: JSON.stringify({ status: newStatus })
+        });
+        if (!response.ok) {
+          throw new Error('Failed to update status on backend');
+        }
+      } catch (error) {
+        console.error('Error updating appointment status:', error);
+        alert('Could not update status. Please try again.');
+        return;
+      }
+    }
+
+    setWorkshopAppointments(prev => prev.map(appt => {
+        if (appt.id !== id) return appt;
+
+        if (action === 'Check-In') {
+            // Add to wallet & Start Tracking
+            setUser(userPrev => ({...userPrev, walletBalance: userPrev.walletBalance + appt.price}));
+            setCarsInWorkshop(prevCars => [...prevCars, { id: Date.now().toString(), model: appt.carDetails, plate: 'NEW 123', status: 'Diagnostics', progress: 0 }]);
+            return { ...appt, status: 'Checked-In' as const };
+        }
+        if (action === 'Reschedule') {
+            alert(`Rescheduling request sent for ${appt.customerName}`);
+            return appt; 
+        }
+        if (action === 'Accept') {
+            return { ...appt, status: 'Confirmed' as const };
+        }
+        if (action === 'Decline') {
+            return { ...appt, status: 'Cancelled' as const };
+        }
+        return appt;
+    }));
   };
 
   const updateCarStatus = (id: string) => {

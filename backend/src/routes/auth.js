@@ -7,7 +7,30 @@ const express_1 = require("express");
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const prismaClient_1 = __importDefault(require("../prismaClient"));
+const auth_1 = require("../middleware/auth");
 const router = (0, express_1.Router)();
+router.get('/me', auth_1.authenticateToken, async (req, res) => {
+    try {
+        const user = await prismaClient_1.default.user.findUnique({
+            where: { id: req.user.id }
+        });
+        if (!user)
+            return res.status(404).json({ error: 'User not found' });
+        res.json({
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            phone: user.phone,
+            gender: user.gender,
+            dob: user.dob,
+            walletBalance: user.walletBalance
+        });
+    }
+    catch (error) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
 router.post('/register', async (req, res) => {
     try {
         const { email, password, name, phone, role } = req.body;
