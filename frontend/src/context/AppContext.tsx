@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { UserProfile, Message, WinchOffer, Workshop, WorkshopAppointment, View } from '../types';
+import { API_URL } from '../config';
 
 interface AppContextType {
   isDarkMode: boolean;
@@ -27,6 +28,8 @@ interface AppContextType {
   setWorkshopAppointments: React.Dispatch<React.SetStateAction<WorkshopAppointment[]>>;
   carsInWorkshop: any[];
   setCarsInWorkshop: React.Dispatch<React.SetStateAction<any[]>>;
+  workshops: Workshop[];
+  setWorkshops: React.Dispatch<React.SetStateAction<Workshop[]>>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -53,8 +56,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [selectedWorkshop, setSelectedWorkshop] = useState<Workshop | null>(null);
   const [workshopAppointments, setWorkshopAppointments] = useState<WorkshopAppointment[]>([]);
   const [carsInWorkshop, setCarsInWorkshop] = useState<any[]>([]);
+  const [workshops, setWorkshops] = useState<Workshop[]>([]);
 
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
+
+  useEffect(() => {
+    fetch(`${API_URL}/api/workshops`)
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) setWorkshops(data);
+      })
+      .catch(err => console.error('Error fetching workshops:', err));
+  }, []);
 
   return (
     <AppContext.Provider value={{
@@ -65,7 +78,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       winchRequestTimer, setWinchRequestTimer,
       selectedWorkshop, setSelectedWorkshop,
       workshopAppointments, setWorkshopAppointments,
-      carsInWorkshop, setCarsInWorkshop
+      carsInWorkshop, setCarsInWorkshop,
+      workshops, setWorkshops
     }}>
       {children}
     </AppContext.Provider>

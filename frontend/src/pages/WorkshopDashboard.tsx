@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 
 export const WorkshopDashboard = () => {
   const navigate = useNavigate();
-  const { user, setUser } = useAuth();
+  const { user, refreshUser } = useAuth();
   const { workshopAppointments, setWorkshopAppointments, carsInWorkshop, setCarsInWorkshop } = useAppContext();
   const [showWorkshopWallet, setShowWorkshopWallet] = React.useState(false);
 
@@ -22,7 +22,7 @@ export const WorkshopDashboard = () => {
       setWorkshopAppointments(prev => prev.map(appt => {
           if (appt.id !== id) return appt;
           if (action === 'Check-In') {
-              setUser({...safeUser, walletBalance: safeUser.walletBalance + appt.price});
+              refreshUser();
               setCarsInWorkshop(prevCars => [...prevCars, { id: Date.now().toString(), model: appt.carDetails, plate: 'NEW 123', status: 'Diagnostics', progress: 0 }]);
               return { ...appt, status: 'Checked-In' as const };
           }
@@ -47,10 +47,10 @@ export const WorkshopDashboard = () => {
       }));
   };
 
-  const handleWorkshopWithdraw = () => {
+  const handleWorkshopWithdraw = async () => {
       if (safeUser.walletBalance > 0) {
           alert(`Withdrawal request for ${safeUser.walletBalance} EGP sent to bank.`);
-          setUser({...safeUser, walletBalance: 0});
+          await refreshUser();
       }
   };
 
@@ -58,7 +58,7 @@ export const WorkshopDashboard = () => {
       <div className="flex flex-col h-screen bg-slate-100 dark:bg-cyber-900">
           {showWorkshopWallet ? (
              <div className="flex-1 p-6 pt-12 flex flex-col">
-                   <button onClick={() => setShowWorkshopWallet(false)} className="mb-6 w-fit text-slate-900 dark:text-white"><ArrowLeft /></button>
+                   <button aria-label="Back" onClick={() => setShowWorkshopWallet(false)} className="mb-6 w-fit text-slate-900 dark:text-white"><ArrowLeft /></button>
                    <h2 className="text-2xl font-bold font-display mb-6 text-slate-900 dark:text-white">Shop Wallet</h2>
                    <div className="glass-panel p-6 rounded-2xl bg-gradient-to-br from-cyber-primary to-blue-700 text-white mb-6">
                        <p className="text-sm opacity-80">Total Revenue</p>
@@ -75,7 +75,7 @@ export const WorkshopDashboard = () => {
                        <p className="text-xs text-green-400 flex items-center gap-1"><CheckCircle size={12}/> Verified Partner</p>
                    </div>
                    <div onClick={() => navigate('/profile')} className="w-10 h-10 rounded-full bg-gray-700 border border-cyber-primary overflow-hidden">
-                       <img src="https://picsum.photos/100/100" />
+                       <img src="https://picsum.photos/100/100" alt="User Profile" />
                    </div>
                </div>
                
@@ -104,6 +104,7 @@ export const WorkshopDashboard = () => {
                                    <span className="text-xs text-gray-500">{car.plate}</span>
                                </div>
                                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-2">
+                                {/* eslint-disable-next-line */}
                                    <div className="bg-cyber-primary h-2 rounded-full transition-all duration-500" style={{width: `${car.progress}%`}}></div>
                                </div>
                                <div className="flex justify-between items-center">

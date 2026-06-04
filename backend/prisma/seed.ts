@@ -1,34 +1,25 @@
-const { PrismaClient } = require('@prisma/client');
-const bcrypt = require('bcryptjs');
+import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const ownerEmail = 'owner@example.com';
-  const password = 'password123';
-  const hashedPassword = await bcrypt.hash(password, 10);
+  console.log('Seeding database with mock workshops...');
 
-  // 1. Create/Upsert the workshop owner user
+  // First create a dummy workshop owner
   const owner = await prisma.user.upsert({
-    where: { email: ownerEmail },
-    update: {
-      passwordHash: hashedPassword,
-      role: 'WORKSHOP_OWNER'
-    },
+    where: { email: 'owner@example.com' },
+    update: {},
     create: {
-      email: ownerEmail,
-      passwordHash: hashedPassword,
-      name: 'Workshop Owner',
-      role: 'WORKSHOP_OWNER'
-    }
+      email: 'owner@example.com',
+      passwordHash: 'dummy_hash',
+      name: 'John Doe',
+      phone: '01000000000',
+      role: 'WORKSHOP_OWNER',
+    },
   });
 
-  console.log('Owner created:', ownerEmail);
-
-  // 2. Create the mock workshops
   const mockWorkshops = [
     {
-      id: '1',
       name: 'Vision Motors',
       rating: 4.9,
       distance: '1.2 km',
@@ -37,12 +28,11 @@ async function main() {
       image: 'https://picsum.photos/400/200?random=1',
       address: 'Building B12, Smart Village, Giza',
       hours: '09:00 AM - 09:00 PM',
-      services: ['Computer Diagnostics', 'Oil Change', 'Brake Service', 'Suspension Check'].join(','),
+      services: 'Computer Diagnostics, Oil Change, Brake Service, Suspension Check',
       description: 'Vision Motors provides state-of-the-art diagnostics and repair services for all car brands. Certified technicians and genuine parts guaranteed.',
       ownerId: owner.id
     },
     {
-      id: '2',
       name: 'Turbo Tech',
       rating: 4.7,
       distance: '3.5 km',
@@ -51,12 +41,11 @@ async function main() {
       image: 'https://picsum.photos/400/200?random=2',
       address: 'El-Nozha St, Heliopolis, Cairo',
       hours: '10:00 AM - 08:00 PM',
-      services: ['Engine Tuning', 'Transmission Repair', 'Electrical Systems', 'AC Repair'].join(','),
+      services: 'Engine Tuning, Transmission Repair, Electrical Systems, AC Repair',
       description: 'Specialized in German and Italian vehicles. We offer precision tuning and complex engine repairs.',
       ownerId: owner.id
     },
     {
-      id: '3',
       name: 'Quick Fix Auto',
       rating: 4.5,
       distance: '5.0 km',
@@ -65,12 +54,11 @@ async function main() {
       image: 'https://picsum.photos/400/200?random=3',
       address: 'Industrial Zone, 6th of October',
       hours: '08:00 AM - 06:00 PM',
-      services: ['Dent Removal', 'Painting', 'Polishing', 'Glass Replacement'].join(','),
+      services: 'Dent Removal, Painting, Polishing, Glass Replacement',
       description: 'Fast and affordable bodywork repairs. We bring your car back to showroom condition.',
       ownerId: owner.id
     },
     {
-      id: '4',
       name: 'Electro Cars',
       rating: 4.8,
       distance: '2.1 km',
@@ -79,12 +67,11 @@ async function main() {
       image: 'https://picsum.photos/400/200?random=4',
       address: 'Mall of Egypt Parking, 6th of October',
       hours: '10:00 AM - 10:00 PM',
-      services: ['Battery Health Check', 'Charging System', 'Software Updates', 'Hybrid Maintenance'].join(','),
+      services: 'Battery Health Check, Charging System, Software Updates, Hybrid Maintenance',
       description: 'The future of car maintenance. Specialized equipment for Tesla, BMW i-series, and other EVs.',
       ownerId: owner.id
     },
     {
-      id: '5',
       name: 'GearHeadz',
       rating: 4.2,
       distance: '8.0 km',
@@ -93,20 +80,26 @@ async function main() {
       image: 'https://picsum.photos/400/200?random=5',
       address: 'Ring Road Exit 14',
       hours: '09:00 AM - 05:00 PM',
-      services: ['Gearbox Rebuild', 'Clutch Replacement', 'Fluid Change', 'Differential Repair'].join(','),
+      services: 'Gearbox Rebuild, Clutch Replacement, Fluid Change, Differential Repair',
       description: 'Transmission experts. Automatic, CVT, and Manual gearbox specialists.',
       ownerId: owner.id
     }
   ];
 
-  for (const shop of mockWorkshops) {
-    await prisma.workshop.upsert({
-      where: { id: shop.id },
-      update: shop,
-      create: shop
+  for (const w of mockWorkshops) {
+    await prisma.workshop.create({
+      data: w
     });
-    console.log(`Workshop seeded: ${shop.name}`);
   }
+
+  console.log('Database seeded successfully!');
 }
 
-main().catch(console.error).finally(() => prisma.$disconnect());
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

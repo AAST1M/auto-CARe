@@ -3,13 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { MapPin, Settings, Calendar, Clock, MessageSquare, Truck, Wrench, Package, ChevronRight, Star, Navigation, User } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
-import { MOCK_WORKSHOPS } from '../types';
 import ThemeToggle from '../components/ThemeToggle';
 
 export const Home = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { locationName, setSelectedWorkshop } = useAppContext();
+  const { locationName, setSelectedWorkshop, workshops } = useAppContext();
 
   // If user is not fully loaded, fallback to default profile values
   const safeUser = user || { name: 'User', bookings: [] } as any;
@@ -26,7 +25,7 @@ export const Home = () => {
           </div>
         </div>
         <div className="flex items-center gap-3">
-           <button onClick={() => navigate('/settings')} className="p-2 rounded-full glass-panel text-slate-900 dark:text-white hover:text-cyber-primary"><Settings size={20} /></button>
+           <button aria-label="Settings" onClick={() => navigate('/settings')} className="p-2 rounded-full glass-panel text-slate-900 dark:text-white hover:text-cyber-primary"><Settings size={20} /></button>
            <ThemeToggle />
            <div className="relative" onClick={() => navigate('/profile')}>
             <div className="w-10 h-10 rounded-full bg-gray-700 overflow-hidden border-2 border-cyber-primary">
@@ -59,7 +58,7 @@ export const Home = () => {
 
         {/* Special Offer Banner */}
         <div className="relative rounded-2xl overflow-hidden h-40 shadow-lg group cursor-pointer" onClick={() => navigate('/chat')}>
-          <img src="https://images.unsplash.com/photo-1625047509168-a7026f36de04?auto=format&fit=crop&q=80" className="absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-105" />
+          <img src="https://images.unsplash.com/photo-1625047509168-a7026f36de04?auto=format&fit=crop&q=80" className="absolute inset-0 w-full h-full object-cover transition-transform group-hover:scale-105" alt="Promotional offer banner" />
           <div className="absolute inset-0 bg-gradient-to-r from-black/80 to-transparent p-6 flex flex-col justify-center text-white">
             <span className="bg-cyber-accent text-cyber-900 text-xs font-bold px-2 py-1 rounded w-fit mb-2">PROMO</span>
             <h3 className="text-2xl font-display font-bold">30% OFF</h3>
@@ -106,7 +105,7 @@ export const Home = () => {
                     <p className="text-xs text-gray-500">Find genuine parts nearby</p>
                 </div>
             </div>
-            <button className="p-2 rounded-full bg-cyber-primary text-white"><ChevronRight size={20}/></button>
+            <button aria-label="Go to Spare Parts Market" className="p-2 rounded-full bg-cyber-primary text-white"><ChevronRight size={20}/></button>
         </div>
 
         {/* Nearby Workshops */}
@@ -119,17 +118,17 @@ export const Home = () => {
             <button onClick={() => navigate('/workshops')} className="text-xs text-cyber-primary">See All</button>
           </div>
           <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
-            {MOCK_WORKSHOPS.map(shop => (
+            {workshops.slice(0, 3).map((shop: any) => (
               <div key={shop.id} className="min-w-[200px] glass-panel rounded-2xl overflow-hidden hover:border-cyber-primary/50 transition-colors" onClick={() => { setSelectedWorkshop(shop); navigate('/workshops/detail'); }}>
-                <img src={shop.image} className="w-full h-24 object-cover" />
+                <img src={shop.image || 'https://picsum.photos/400/200?random=' + shop.id} className="w-full h-24 object-cover" alt={`${shop.name} workshop`} />
                 <div className="p-3">
                   <h4 className="font-bold text-sm truncate text-slate-900 dark:text-white">{shop.name}</h4>
                   <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 mt-1">
                     <Star size={12} className="text-yellow-500 fill-yellow-500" />
-                    <span>{shop.rating}</span>
+                    <span>{shop.rating || 'New'}</span>
                     <span>•</span>
                     <MapPin size={12} />
-                    <span>{shop.distance}</span>
+                    <span>{shop.distance || '1.2 km'}</span>
                   </div>
                 </div>
               </div>

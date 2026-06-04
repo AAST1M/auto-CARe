@@ -38,4 +38,23 @@ router.post('/offers', auth_1.authenticateToken, async (req, res) => {
         res.status(500).json({ error: 'Server error' });
     }
 });
+// Create a winch booking (when user accepts offer)
+router.post('/bookings', auth_1.authenticateToken, async (req, res) => {
+    try {
+        const { driverName, price, vehicle } = req.body;
+        const booking = await prismaClient_1.default.winchBooking.create({
+            data: {
+                userId: req.user.id,
+                driverName,
+                price: parseFloat(price),
+                vehicle,
+                status: 'Completed'
+            }
+        });
+        res.json(booking);
+    }
+    catch (error) {
+        res.status(500).json({ error: 'Server error' });
+    }
+});
 exports.default = router;

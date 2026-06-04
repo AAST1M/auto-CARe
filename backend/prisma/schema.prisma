@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -55,6 +55,7 @@ model Appointment {
   carDetails    String?
   time          String
   status        String   @default("Pending") // Pending, Confirmed, Checked-In, Completed, Cancelled
+  progress      Int      @default(0) // 0 to 100 for live tracking
   price         Float
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -65,6 +66,7 @@ model Appointment {
 
 model WinchOffer {
   id            String   @id @default(uuid())
+  driverId      String
   driverName    String
   price         Float
   eta           String
@@ -72,4 +74,20 @@ model WinchOffer {
   vehicle       String
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+model WinchBooking {
+  id          String   @id @default(uuid())
+  userId      String
+  driverId    String
+  driverName  String
+  vehicle     String
+  price       Float
+  status      String   @default("Active") // Active, Accepted, En_Route, Arrived, Completed, Cancelled
+  driverLat   Float?
+  driverLng   Float?
+  userLat     Float?
+  userLng     Float?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

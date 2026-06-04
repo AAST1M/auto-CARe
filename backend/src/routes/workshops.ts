@@ -1,24 +1,38 @@
 import { Router } from 'express';
 import prisma from '../prismaClient';
-import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { authenticateToken, requireRole, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
 // Get all workshops
 router.get('/', async (req, res) => {
   try {
-    const workshops = await prisma.workshop.findMany();
+    const workshops = await prisma.workshop.findMany({
+      include: { owner: { select: { name: true } } }
+    });
     res.json(workshops);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
 });
 
-// Create a new workshop
-router.post('/', authenticateToken, async (req: AuthRequest, res) => {
-  if (req.user?.role !== 'WORKSHOP_OWNER') {
-    return res.status(403).json({ error: 'Unauthorized' });
+// Get workshop details by ID
+router.get('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const workshop = await prisma.workshop.findUnique({
+      where: { id },
+      include: { owner: { select: { name: true, phone: true } } }
+    });
+    if (!workshop) return res.status(404).json({ error: 'Workshop not found' });
+    res.json(workshop);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
   }
+});
+
+// Create a new workshop (WORKSHOP_OWNER only)
+router.post('/', authenticateToken, requireRole('WORKSHOP_OWNER'), async (req: AuthRequest, res) => {
 
   try {
     const { name, services, address, hours, description } = req.body;
@@ -29,7 +43,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res) => {
         address,
         hours,
         description,
-        ownerId: req.user.id
+        ownerId: req.user!.id
       }
     });
     res.json(workshop);
@@ -38,20 +52,73 @@ router.post('/', authenticateToken, async (req: AuthRequest, res) => {
   }
 });
 
-// Book an appointment
+// Book an appointment (authenticated users only — not workshop owners)
 router.post('/:id/book', authenticateToken, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
     const { serviceType, time, carDetails, price } = req.body;
+
+    // Validation
+    if (!serviceType || !serviceType.trim()) {
+      return res.status(400).json({ error: 'Service type is required' });
+    }
+    if (!time || !time.trim()) {
+      return res.status(400).json({ error: 'Appointment time is required' });
+    }
+    if (!price || isNaN(Number(price)) || Number(price) <= 0) {
+      return res.status(400).json({ error: 'A valid price is required' });
+    }
+
+    const parsedPrice = Number(price);
+
+    // Workshop owners cannot book their own workshops
+    let workshop;
+    if (req.user!.role === 'WORKSHOP_OWNER') {
+      workshop = await prisma.workshop.findFirst({
+        where: { id: id as string, ownerId: req.user!.id }
+      });
+      if (workshop) {
+        return res.status(403).json({ error: 'Workshop owners cannot book their own workshops' });
+      }
+    }
     
+    // Fetch workshop to get ownerId
+    if (!workshop) {
+      workshop = await prisma.workshop.findUnique({ where: { id: id as string } });
+      if (!workshop) return res.status(404).json({ error: 'Workshop not found' });
+    }
+
+    // Check user balance
+    const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+    if (!user || user.walletBalance < parsedPrice) {
+      return res.status(402).json({ error: 'Insufficient funds. Please top up your wallet.' });
+    }
+
+    // Process Transaction (Deduct from user, give 90% to workshop owner)
+    await prisma.$transaction(async (tx) => {
+      // Deduct full amount
+      await tx.user.update({
+        where: { id: user.id },
+        data: { walletBalance: { decrement: parsedPrice } }
+      });
+
+      // Add 90% to workshop owner
+      await tx.user.update({
+        where: { id: workshop!.ownerId },
+        data: { walletBalance: { increment: parsedPrice * 0.9 } }
+      });
+
+      // Platform keeps 10% (can be tracked implicitly by wallet total differences)
+    });
+
     const appointment = await prisma.appointment.create({
       data: {
         userId: req.user!.id,
         workshopId: id as string,
-        serviceType,
-        time,
-        carDetails,
-        price
+        serviceType: serviceType.trim(),
+        time: time.trim(),
+        carDetails: carDetails?.trim() || null,
+        price: parsedPrice
       }
     });
     res.json(appointment);
@@ -111,7 +178,7 @@ router.patch('/appointments/:id', authenticateToken, async (req: AuthRequest, re
   try {
     const id = req.params.id as string;
     const { status } = req.body;
-    
+
     const appointment = await prisma.appointment.findUnique({
       where: { id }
     });
@@ -139,6 +206,43 @@ router.patch('/appointments/:id', authenticateToken, async (req: AuthRequest, re
     const updated = await prisma.appointment.update({
       where: { id },
       data: { status }
+    });
+
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update appointment progress (0-100)
+router.patch('/appointments/:id/progress', authenticateToken, requireRole('WORKSHOP_OWNER'), async (req: AuthRequest, res) => {
+  try {
+    const id = req.params.id as string;
+    const { progress } = req.body;
+
+    if (progress === undefined || isNaN(Number(progress)) || Number(progress) < 0 || Number(progress) > 100) {
+      return res.status(400).json({ error: 'Progress must be a number between 0 and 100' });
+    }
+
+    const appointment = await prisma.appointment.findUnique({
+      where: { id }
+    });
+
+    if (!appointment) {
+      return res.status(404).json({ error: 'Appointment not found' });
+    }
+
+    // Verify ownership
+    const workshop = await prisma.workshop.findFirst({
+      where: { id: appointment.workshopId, ownerId: req.user!.id }
+    });
+    if (!workshop) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    const updated = await prisma.appointment.update({
+      where: { id },
+      data: { progress: Number(progress) }
     });
 
     res.json(updated);

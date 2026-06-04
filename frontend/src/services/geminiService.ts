@@ -1,3 +1,5 @@
+import { API_URL } from '../config';
+
 export interface MediaInput {
   mimeType: string;
   data: string; // Base64 string
@@ -5,7 +7,7 @@ export interface MediaInput {
 
 export const diagnoseCarIssue = async (symptom: string, media?: MediaInput): Promise<string> => {
   try {
-    const response = await fetch('http://localhost:5001/api/gemini/diagnose', {
+    const response = await fetch(`${API_URL}/api/gemini/diagnose`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

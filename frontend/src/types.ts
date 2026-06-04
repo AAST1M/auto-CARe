@@ -21,17 +21,20 @@ export enum View {
   WINCH_NEGOTIATION = 'WINCH_NEGOTIATION',
   WORKSHOP_LIST = 'WORKSHOP_LIST',
   WORKSHOP_DETAIL = 'WORKSHOP_DETAIL',
+  WINCH_LIVE_MAP = 'WINCH_LIVE_MAP',
   BOOKING = 'BOOKING',
   SUCCESS = 'SUCCESS',
   PROFILE = 'PROFILE',
   SETTINGS = 'SETTINGS',
-  SPARE_PARTS = 'SPARE_PARTS'
+  SPARE_PARTS = 'SPARE_PARTS',
+  ADMIN_DASHBOARD = 'ADMIN_DASHBOARD'
 }
 
 export enum UserRole {
   USER = 'USER',
   WINCH_DRIVER = 'WINCH_DRIVER',
-  WORKSHOP_OWNER = 'WORKSHOP_OWNER'
+  WORKSHOP_OWNER = 'WORKSHOP_OWNER',
+  ADMIN = 'ADMIN'
 }
 
 export interface Message {
@@ -116,4 +119,14 @@ export interface UserProfile {
   shopLocation?: string;
   govLicense?: string;
   sparePartsBrands?: string;
+}
+
+export interface WinchBooking {
+  id: string;
+  userId: string;
+  driverName: string;
+  vehicle: string;
+  price: number;
+  status: string;
+  createdAt: string;
 }
