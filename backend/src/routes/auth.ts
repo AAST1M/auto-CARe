@@ -129,9 +129,14 @@ router.post('/register', async (req, res) => {
       }
     });
 
+    if (!process.env.JWT_SECRET) {
+      console.error('CRITICAL: JWT_SECRET is not defined in environment variables');
+      return res.status(500).json({ error: 'Internal server error during registration' });
+    }
+
     const token = jwt.sign(
       { id: user.id, role: user.role },
-      process.env.JWT_SECRET || 'secret',
+      process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
     res.json({
@@ -162,9 +167,14 @@ router.post('/login', async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch) return res.status(400).json({ error: 'Invalid email or password' });
 
+    if (!process.env.JWT_SECRET) {
+      console.error('CRITICAL: JWT_SECRET is not defined in environment variables');
+      return res.status(500).json({ error: 'Internal server error during login' });
+    }
+
     const token = jwt.sign(
       { id: user.id, role: user.role },
-      process.env.JWT_SECRET || 'secret',
+      process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
     res.json({
