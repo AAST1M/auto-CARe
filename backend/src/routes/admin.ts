@@ -81,17 +81,14 @@ router.get('/stats', authenticateToken, requireAdmin, async (req: AuthRequest, r
 // Get all transactions
 router.get('/transactions', authenticateToken, requireAdmin, async (req: AuthRequest, res) => {
   try {
-    // Fetch all users to map names/emails
-    const allUsers = await prisma.user.findMany({
-      select: { id: true, name: true, email: true }
-    });
-    const userMap = new Map(allUsers.map(u => [u.id, u.name || u.email]));
-
     // Fetch workshop appointments
     const appointments = await prisma.appointment.findMany({
       include: {
         workshop: {
           select: { name: true }
+        },
+        user: {
+          select: { name: true, email: true }
         }
       },
       orderBy: { createdAt: 'desc' }
@@ -102,12 +99,20 @@ router.get('/transactions', authenticateToken, requireAdmin, async (req: AuthReq
       orderBy: { createdAt: 'desc' }
     });
 
+    // Fetch specific users needed for winch bookings (since there's no direct Prisma relation in the schema for it)
+    const winchUserIds = [...new Set(winchBookings.map(wb => wb.userId))];
+    const winchUsers = await prisma.user.findMany({
+      where: { id: { in: winchUserIds } },
+      select: { id: true, name: true, email: true }
+    });
+    const winchUserMap = new Map(winchUsers.map(u => [u.id, u.name || u.email]));
+
     // Format workshop transactions
     const formattedAppts = appointments.map(appt => ({
       id: appt.id,
       type: 'Workshop Booking',
       date: appt.createdAt,
-      customerName: userMap.get(appt.userId) || 'Unknown User',
+      customerName: appt.user ? (appt.user.name || appt.user.email) : 'Unknown User',
       providerName: appt.workshop.name,
       amount: appt.price,
       commission: appt.price * 0.1,
@@ -119,7 +124,7 @@ router.get('/transactions', authenticateToken, requireAdmin, async (req: AuthReq
       id: wb.id,
       type: 'Winch Ride',
       date: wb.createdAt,
-      customerName: userMap.get(wb.userId) || 'Unknown User',
+      customerName: winchUserMap.get(wb.userId) || 'Unknown User',
       providerName: wb.driverName,
       amount: wb.price,
       commission: wb.price * 0.1,
