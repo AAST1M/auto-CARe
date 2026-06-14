@@ -86,11 +86,9 @@ async function main() {
     }
   ];
 
-  for (const w of mockWorkshops) {
-    await prisma.workshop.create({
-      data: w
-    });
-  }
+  await prisma.workshop.createMany({
+    data: mockWorkshops
+  });
 
   console.log('Database seeded successfully!');
 }
