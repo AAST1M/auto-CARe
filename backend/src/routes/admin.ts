@@ -16,8 +16,9 @@ const requireAdmin = (req: AuthRequest, res: Response, next: any) => {
 router.get('/stats', authenticateToken, requireAdmin, async (req: AuthRequest, res) => {
   try {
     // 1. Count users by role
-    const users = await prisma.user.findMany({
-      select: { role: true }
+    const groupedUsers = await prisma.user.groupBy({
+      by: ['role'],
+      _count: true
     });
     const roleCounts = {
       USER: 0,
@@ -25,9 +26,9 @@ router.get('/stats', authenticateToken, requireAdmin, async (req: AuthRequest, r
       WORKSHOP_OWNER: 0,
       ADMIN: 0
     };
-    users.forEach(u => {
-      if (u.role in roleCounts) {
-        roleCounts[u.role as keyof typeof roleCounts]++;
+    groupedUsers.forEach(g => {
+      if (g.role in roleCounts) {
+        roleCounts[g.role as keyof typeof roleCounts] = g._count;
       }
     });
 
