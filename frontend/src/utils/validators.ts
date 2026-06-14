@@ -142,6 +142,7 @@ export const validateAddress = (addr: string): ValidationResult => {
 export const validateDOB = (dob: string): ValidationResult => {
   if (!dob) return fail('Date of birth is required');
   const birthDate = new Date(dob);
+  if (isNaN(birthDate.getTime())) return fail('Please enter a valid date of birth');
   const today = new Date();
   let age = today.getFullYear() - birthDate.getFullYear();
   const m = today.getMonth() - birthDate.getMonth();
