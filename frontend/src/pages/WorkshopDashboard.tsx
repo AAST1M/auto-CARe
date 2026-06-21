@@ -1,57 +1,109 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ArrowLeft, CheckCircle, Activity, Calendar, Wallet, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
+import { API_URL } from '../config';
 
 export const WorkshopDashboard = () => {
   const navigate = useNavigate();
   const { user, refreshUser } = useAuth();
-  const { workshopAppointments, setWorkshopAppointments, carsInWorkshop, setCarsInWorkshop } = useAppContext();
+  const { carsInWorkshop, setCarsInWorkshop } = useAppContext();
   const [showWorkshopWallet, setShowWorkshopWallet] = React.useState(false);
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Fallback
   const safeUser = user || { walletBalance: 0, shopName: 'My Workshop' } as any;
 
+  // Fetch appointments from backend
+  const fetchAppointments = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_URL}/api/workshops/appointments`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAppointments(data);
+      }
+    } catch (err) {
+      console.error('Error fetching appointments:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    // Fetch workshops and appointments from backend
-    // fetch('http://localhost:5001/api/workshops')...
+    fetchAppointments();
   }, []);
 
-  const handleWorkshopAction = (id: string, action: string) => {
-      setWorkshopAppointments(prev => prev.map(appt => {
-          if (appt.id !== id) return appt;
-          if (action === 'Check-In') {
-              refreshUser();
-              setCarsInWorkshop(prevCars => [...prevCars, { id: Date.now().toString(), model: appt.carDetails, plate: 'NEW 123', status: 'Diagnostics', progress: 0 }]);
-              return { ...appt, status: 'Checked-In' as const };
-          }
-          if (action === 'Reschedule') { alert(`Rescheduling request sent for ${appt.customerName}`); return appt; }
-          if (action === 'Accept') { return { ...appt, status: 'Confirmed' as const }; }
-          if (action === 'Decline') { return { ...appt, status: 'Cancelled' as const }; }
-          return appt;
-      }));
+  const handleWorkshopAction = async (id: string, action: string) => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    let newStatus = '';
+    if (action === 'Check-In') newStatus = 'Checked-In';
+    else if (action === 'Accept') newStatus = 'Confirmed';
+    else if (action === 'Decline') newStatus = 'Cancelled';
+    else if (action === 'Reschedule') {
+      alert(`Rescheduling request sent.`);
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/api/workshops/appointments/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ status: newStatus })
+      });
+
+      if (!res.ok) throw new Error('Update failed');
+
+      if (action === 'Check-In') {
+        const appt = appointments.find(a => a.id === id);
+        if (appt) {
+          setCarsInWorkshop(prev => [...prev, {
+            id: Date.now().toString(),
+            model: appt.carDetails || 'Unknown Car',
+            plate: 'NEW 123',
+            status: 'Diagnostics',
+            progress: 0
+          }]);
+        }
+        refreshUser();
+      }
+
+      // Refresh appointments list
+      await fetchAppointments();
+    } catch (err) {
+      alert('Could not update status. Please try again.');
+    }
   };
 
   const updateCarStatus = (id: string) => {
-      setCarsInWorkshop(prev => prev.map(car => {
-          if (car.id === id) {
-              const newProgress = Math.min(100, car.progress + 25);
-              let status = car.status;
-              if (newProgress >= 25) status = 'Repairing';
-              if (newProgress >= 75) status = 'Quality Check';
-              if (newProgress >= 100) status = 'Ready';
-              return { ...car, progress: newProgress, status };
-          }
-          return car;
-      }));
+    setCarsInWorkshop(prev => prev.map(car => {
+      if (car.id === id) {
+        const newProgress = Math.min(100, car.progress + 25);
+        let status = car.status;
+        if (newProgress >= 25) status = 'Repairing';
+        if (newProgress >= 75) status = 'Quality Check';
+        if (newProgress >= 100) status = 'Ready';
+        return { ...car, progress: newProgress, status };
+      }
+      return car;
+    }));
   };
 
   const handleWorkshopWithdraw = async () => {
-      if (safeUser.walletBalance > 0) {
-          alert(`Withdrawal request for ${safeUser.walletBalance} EGP sent to bank.`);
-          await refreshUser();
-      }
+    if (safeUser.walletBalance > 0) {
+      alert(`Withdrawal request for ${safeUser.walletBalance} EGP sent to bank.`);
+      await refreshUser();
+    }
   };
 
   return (
@@ -82,7 +134,7 @@ export const WorkshopDashboard = () => {
                <div className="grid grid-cols-2 gap-4">
                    <div className="bg-white/10 p-4 rounded-xl backdrop-blur-sm">
                        <p className="text-xs text-gray-300">Active Bookings</p>
-                       <p className="text-2xl font-bold">{workshopAppointments.filter(a => a.status !== 'Cancelled').length}</p>
+                       <p className="text-2xl font-bold">{appointments.filter(a => a.status !== 'Cancelled').length}</p>
                    </div>
                    <div className="bg-white/10 p-4 rounded-xl backdrop-blur-sm">
                        <p className="text-xs text-gray-300">Cars in Shop</p>
@@ -119,10 +171,12 @@ export const WorkshopDashboard = () => {
 
                <div>
                    <h3 className="font-bold text-slate-900 dark:text-white mb-3">Incoming Appointments</h3>
-                   {workshopAppointments.map(appt => (
+                   {loading && <p className="text-gray-500 text-sm">Loading appointments...</p>}
+                   {!loading && appointments.length === 0 && <p className="text-gray-500 text-sm">No appointments yet.</p>}
+                   {appointments.map(appt => (
                        <div key={appt.id} className={`glass-panel p-4 rounded-xl border-l-4 mb-3 ${appt.status === 'Confirmed' ? 'border-yellow-500' : appt.status === 'Checked-In' ? 'border-green-500' : 'border-gray-500'}`}>
                            <div className="flex justify-between mb-2">
-                               <span className="font-bold text-slate-900 dark:text-white">{appt.customerName}</span>
+                               <span className="font-bold text-slate-900 dark:text-white">{appt.user?.name || appt.user?.email || 'Customer'}</span>
                                <span className="text-xs text-gray-500">{appt.time}</span>
                            </div>
                            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">{appt.carDetails} • {appt.serviceType}</p>

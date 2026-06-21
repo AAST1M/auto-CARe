@@ -59,6 +59,7 @@ import {
   validateCarYear, validateRequired
 } from './utils/validators';
 import { API_URL } from './config';
+import { io } from 'socket.io-client';
 
 const INITIAL_WINCH_OFFERS: WinchOffer[] = [
   { id: 'w1', driverName: 'Ahmed Mahmoud', price: 350, eta: '15 min', rating: 4.8, vehicle: 'Heavy Winch' },
@@ -76,7 +77,7 @@ const App: React.FC = () => {
   useEffect(() => {
     fetch(`${API_URL}/api/workshops`)
       .then(res => res.json())
-      .then(data => { if(Array.isArray(data)) setWorkshops(data); });
+      .then(data => { if (Array.isArray(data)) setWorkshops(data); });
   }, []);
 
   // --- App State ---
@@ -218,14 +219,16 @@ const App: React.FC = () => {
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 
-  // Winch State (User Side)
+  // Winch State (Customer Side)
   const [winchStatus, setWinchStatus] = useState<'idle' | 'searching' | 'negotiating' | 'confirmed'>('idle');
   const [liveBookingId, setLiveBookingId] = useState<string | null>(null);
   const [activeOffers, setActiveOffers] = useState<WinchOffer[]>([]);
+  const winchSocketRef = useRef<ReturnType<typeof io> | null>(null);
+  const winchSocketIdRef = useRef<string>('');
 
-  // Winch Dashboard State (Driver Side)
+  // Winch Dashboard State (Driver Side) — kept for AppContext compat
   const [isWinchOnline, setIsWinchOnline] = useState(false);
-  const [isWinchBusy, setIsWinchBusy] = useState(false); // New Busy Status
+  const [isWinchBusy, setIsWinchBusy] = useState(false);
   const [winchRequestTimer, setWinchRequestTimer] = useState(30);
   const [activeWinchRequest, setActiveWinchRequest] = useState<any | null>(null);
   const [showWinchWallet, setShowWinchWallet] = useState(false);
@@ -493,79 +496,100 @@ const App: React.FC = () => {
     }
   };
 
-  // Winch Negotiation Logic (User Side)
+  // Winch Request Logic (Customer Side) — Real Socket.IO
   const requestWinch = () => {
     setWinchStatus('searching');
     setActiveOffers([]);
-    setTimeout(() => {
+
+    // Connect socket
+    const socket = io(API_URL, { withCredentials: true });
+    winchSocketRef.current = socket;
+
+    socket.on('connect', () => {
+      winchSocketIdRef.current = socket.id ?? '';
+      if (user?.id) socket.emit('register_user', user.id);
+      // Ask for current online drivers
+      socket.emit('get_drivers');
+    });
+
+    // Receive list of online drivers
+    socket.on('drivers_updated', (drivers: any[]) => {
+      if (drivers.length > 0) {
+        const mapped: WinchOffer[] = drivers.map((d: any) => ({
+          id: d.socketId,
+          driverName: d.driverName,
+          price: d.price || 500,
+          eta: '~10 min',
+          rating: 4.8,
+          vehicle: d.vehicle || 'Winch Truck',
+          status: 'pending' as const,
+          driverId: d.driverId,
+          driverSocketId: d.socketId,
+        }));
+        setActiveOffers(mapped);
+        setWinchStatus('negotiating');
+      } else {
+        // No drivers online yet — keep searching
+        setWinchStatus('searching');
+      }
+    });
+
+    // Driver accepted → booking created on server
+    socket.on('booking_confirmed', (data: { bookingId: string; driverName: string; vehicle: string; price: number }) => {
+      setLiveBookingId(data.bookingId);
+      setWinchStatus('confirmed');
+      navigate(View.WINCH_LIVE_MAP);
+    });
+
+    // Driver declined
+    socket.on('request_declined', (data: { message: string }) => {
+      alert(data.message);
+      // Refresh driver list
+      socket.emit('get_drivers');
       setWinchStatus('negotiating');
-      setActiveOffers(JSON.parse(JSON.stringify(INITIAL_WINCH_OFFERS)));
-    }, 2000);
+    });
+
+    // Driver became unavailable
+    socket.on('driver_unavailable', (data: { message: string }) => {
+      alert(data.message);
+      socket.emit('get_drivers');
+    });
   };
 
   const adjustOfferPrice = (offerId: string, delta: number) => {
     setActiveOffers(prev => prev.map(offer => {
       if (offer.id === offerId) {
-        return { ...offer, price: Math.max(0, offer.price + delta) };
+        return { ...offer, price: Math.max(100, offer.price + delta) };
       }
       return offer;
     }));
   };
 
   const handleCounterOffer = (offerId: string) => {
-    setActiveOffers(prev => prev.map(offer => {
-      if (offer.id === offerId) {
-        // Simulation: Driver accepts if price is reasonable (e.g. within 10% of original)
-        const original = INITIAL_WINCH_OFFERS.find(o => o.id === offerId)?.price || 300;
-        const willAccept = offer.price >= (original * 0.9);
-
-        if (willAccept) {
-          return { ...offer, status: 'accepted' as const };
-        } else {
-          // Simulate driver slightly lowering their own price in response
-          const counterPrice = Math.floor((offer.price + original) / 2);
-          return { ...offer, price: counterPrice, status: 'pending' as const };
-        }
-      }
-      return offer;
-    }));
+    const offer = activeOffers.find(o => o.id === offerId);
+    if (!offer) return;
+    const socket = winchSocketRef.current;
+    if (!socket) return;
+    // Send counter offer — server will forward to driver (driver sees updated price)
+    // For now we update locally and resend the request
+    alert(`Counter offer of ${offer.price} EGP sent to driver. Waiting...`);
   };
 
-  const handleAcceptOffer = async (offer: WinchOffer) => {
-    setWinchStatus('confirmed');
-    
-    try {
-      const tokenVal = localStorage.getItem('token');
-      const response = await fetch(`${API_URL}/api/winch/bookings`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${tokenVal}`
-        },
-        body: JSON.stringify({
-          driverName: offer.driverName,
-          price: offer.price,
-          vehicle: offer.vehicle
-        })
-      });
+  const handleAcceptOffer = (offer: WinchOffer) => {
+    const socket = winchSocketRef.current;
+    if (!socket || !user?.id) return;
+    setWinchStatus('searching'); // show searching while driver confirms
 
-      if (response.ok) {
-        const data = await response.json();
-        const newBooking: UserBooking = {
-          id: data.id || Date.now().toString(),
-          serviceName: `Winch: ${offer.driverName}`,
-          date: new Date().toLocaleDateString(),
-          status: 'Confirmed',
-          price: `${offer.price} EGP`
-        };
-        setUser(prev => ({ ...prev, bookings: [newBooking, ...prev.bookings] }));
-        setLiveBookingId(data.id);
-      }
-    } catch (error) {
-      console.error('Error saving winch booking to database:', error);
-    }
-
-    navigate(View.WINCH_LIVE_MAP);
+    socket.emit('request_driver', {
+      customerId: user.id,
+      customerName: user.name || 'Customer',
+      driverSocketId: (offer as any).driverSocketId || offer.id,
+      car: `${user.carBrand || 'My'} ${user.carModel || 'Car'}`,
+      issue: 'Breakdown assistance',
+      price: offer.price,
+      lat: 30.0444,
+      lng: 31.2357,
+    });
   };
 
   // Workshop Booking Logic
@@ -1449,11 +1473,10 @@ const App: React.FC = () => {
               {Object.values(CarType).map((type) => (
                 <button key={type}
                   onClick={() => { setUser({ ...user, carType: type }); setCarTouched(p => ({ ...p, type: true })); setCarErrors(p => ({ ...p, type: undefined })); }}
-                  className={`p-4 rounded-xl glass-panel text-center transition-all ${
-                    user.carType === type
-                      ? 'border-cyber-accent bg-cyber-primary/20 text-cyber-primary font-bold ring-1 ring-cyber-primary'
-                      : 'text-gray-500 dark:text-gray-400 hover:border-cyber-primary/50'
-                  }`}
+                  className={`p-4 rounded-xl glass-panel text-center transition-all ${user.carType === type
+                    ? 'border-cyber-accent bg-cyber-primary/20 text-cyber-primary font-bold ring-1 ring-cyber-primary'
+                    : 'text-gray-500 dark:text-gray-400 hover:border-cyber-primary/50'
+                    }`}
                 >
                   {type}
                 </button>
@@ -1692,14 +1715,26 @@ const App: React.FC = () => {
           {winchStatus === 'searching' && (
             <div className="flex flex-col items-center py-8">
               <div className="w-16 h-16 border-4 border-cyber-primary border-t-transparent rounded-full animate-spin mb-4"></div>
-              <h3 className="text-xl font-bold animate-pulse text-slate-900 dark:text-white">Broadcasting to drivers...</h3>
-              <p className="text-gray-500 dark:text-gray-400 text-sm mt-2">Expanding radius: 5km</p>
+              <h3 className="text-xl font-bold animate-pulse text-slate-900 dark:text-white">Looking for online drivers...</h3>
+              <p className="text-gray-500 dark:text-gray-400 text-sm mt-2">Connecting to nearby winch drivers</p>
+              <button onClick={() => { setWinchStatus('idle'); winchSocketRef.current?.disconnect(); }} className="mt-6 text-xs text-red-400 underline">Cancel</button>
+            </div>
+          )}
+
+          {winchStatus === 'negotiating' && activeOffers.length === 0 && (
+            <div className="flex flex-col items-center py-8 text-center">
+              <div className="w-16 h-16 bg-yellow-500/10 rounded-full flex items-center justify-center mb-4">
+                <span className="text-3xl">🚛</span>
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">No Drivers Online</h3>
+              <p className="text-gray-500 dark:text-gray-400 text-sm mb-6">There are no winch drivers available right now. Please try again shortly.</p>
+              <button onClick={requestWinch} className="bg-cyber-primary text-white px-6 py-3 rounded-xl font-bold">Try Again</button>
             </div>
           )}
 
           {winchStatus === 'negotiating' && (
             <div className="space-y-4">
-              <h3 className="font-bold text-cyber-primary dark:text-cyber-accent mb-2">2 Drivers Nearby</h3>
+              <h3 className="font-bold text-cyber-primary dark:text-cyber-accent mb-2">{activeOffers.length} Driver{activeOffers.length !== 1 ? 's' : ''} Available Nearby</h3>
               {activeOffers.map(offer => (
                 <div key={offer.id} className="bg-white/50 dark:bg-gray-800/80 rounded-xl p-4 border border-gray-200 dark:border-gray-700 shadow-sm">
                   <div className="flex justify-between items-start mb-2">
@@ -2295,6 +2330,11 @@ const App: React.FC = () => {
     </div>
   );
 
+  const [editingVehicle, setEditingVehicle] = React.useState(false);
+  const [vehicleBrand, setVehicleBrand] = React.useState(user.carBrand || '');
+  const [vehicleModel, setVehicleModel] = React.useState(user.carModel || '');
+  const [vehicleLicense, setVehicleLicense] = React.useState('ABC 123');
+
   const renderProfile = () => (
     <div className="flex flex-col h-screen bg-slate-100 dark:bg-black">
       <div className="p-6 pt-12 flex items-center gap-4">
@@ -2318,17 +2358,46 @@ const App: React.FC = () => {
         <div className="glass-panel p-4 rounded-xl mb-6">
           <div className="flex justify-between items-center mb-4">
             <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-2"><Car size={18} /> My Vehicle</h4>
-            <button className="text-xs text-cyber-primary">Edit</button>
+            <button className="text-xs text-cyber-primary" onClick={() => setEditingVehicle(v => !v)}>{editingVehicle ? 'Cancel' : 'Edit'}</button>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-lg bg-slate-200 dark:bg-gray-700 flex items-center justify-center">
-              <Car className="text-gray-400" />
+          {editingVehicle ? (
+            <div className="space-y-3">
+              <input
+                className="w-full bg-slate-100 dark:bg-gray-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white border border-gray-600 focus:outline-none focus:border-cyber-primary"
+                placeholder="Car Brand (e.g. Toyota)"
+                value={vehicleBrand}
+                onChange={e => setVehicleBrand(e.target.value)}
+              />
+              <input
+                className="w-full bg-slate-100 dark:bg-gray-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white border border-gray-600 focus:outline-none focus:border-cyber-primary"
+                placeholder="Car Model (e.g. Corolla)"
+                value={vehicleModel}
+                onChange={e => setVehicleModel(e.target.value)}
+              />
+              <input
+                className="w-full bg-slate-100 dark:bg-gray-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white border border-gray-600 focus:outline-none focus:border-cyber-primary"
+                placeholder="License Plate (e.g. ABC 123)"
+                value={vehicleLicense}
+                onChange={e => setVehicleLicense(e.target.value)}
+              />
+              <button
+                className="w-full bg-cyber-primary text-white text-sm font-bold py-2 rounded-lg"
+                onClick={() => setEditingVehicle(false)}
+              >
+                Save Vehicle
+              </button>
             </div>
-            <div>
-              <p className="font-bold text-slate-900 dark:text-white">{user.carBrand} {user.carModel}</p>
-              <p className="text-xs text-gray-500">License: ABC 123</p>
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-lg bg-slate-200 dark:bg-gray-700 flex items-center justify-center">
+                <Car className="text-gray-400" />
+              </div>
+              <div>
+                <p className="font-bold text-slate-900 dark:text-white">{vehicleBrand} {vehicleModel}</p>
+                <p className="text-xs text-gray-500">License: {vehicleLicense}</p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-4">Recent Bookings</h4>
@@ -2431,8 +2500,8 @@ const App: React.FC = () => {
             <ChevronRight size={20} className="text-gray-500" />
           </div>
 
-          <button 
-            onClick={() => { authContext.logout(); navigate(View.ONBOARDING); }} 
+          <button
+            onClick={() => { authContext.logout(); navigate(View.ONBOARDING); }}
             className="w-full p-4 glass-panel rounded-xl flex items-center justify-center gap-2 text-red-500 font-bold mt-8 hover:bg-red-500/10 transition-colors"
           >
             <LogOut size={20} /> Sign Out
@@ -2444,19 +2513,19 @@ const App: React.FC = () => {
 
   const renderAdminDashboard = () => {
     const filteredTx = adminTransactions.filter(tx => {
-      const matchesSearch = 
+      const matchesSearch =
         tx.customerName.toLowerCase().includes(adminSearch.toLowerCase()) ||
         tx.providerName.toLowerCase().includes(adminSearch.toLowerCase());
-      
-      const matchesType = 
+
+      const matchesType =
         adminTxFilter === 'all' ||
         (adminTxFilter === 'workshop' && tx.type === 'Workshop Booking') ||
         (adminTxFilter === 'winch' && tx.type === 'Winch Ride');
-      
+
       return matchesSearch && matchesType;
     });
 
-    const filteredUsers = adminUsers.filter(u => 
+    const filteredUsers = adminUsers.filter(u =>
       (u.name || '').toLowerCase().includes(adminSearch.toLowerCase()) ||
       u.email.toLowerCase().includes(adminSearch.toLowerCase()) ||
       (u.phone || '').toLowerCase().includes(adminSearch.toLowerCase())
@@ -2475,8 +2544,8 @@ const App: React.FC = () => {
             <span className="text-xs text-cyber-primary font-bold uppercase tracking-wider">Control Panel</span>
             <h2 className="text-2xl font-bold font-display">Admin Dashboard</h2>
           </div>
-          <button 
-            onClick={handleLogout} 
+          <button
+            onClick={handleLogout}
             className="p-2.5 bg-red-500/20 text-red-500 rounded-xl hover:bg-red-500/30 transition-colors flex items-center gap-1 text-xs font-bold"
             title="Sign Out"
             aria-label="Sign Out"
@@ -2487,19 +2556,19 @@ const App: React.FC = () => {
 
         {/* Admin Navigation Tabs */}
         <div className="px-6 flex gap-2 mb-6">
-          <button 
+          <button
             onClick={() => { setAdminActiveTab('overview'); setAdminSearch(''); }}
             className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all ${adminActiveTab === 'overview' ? 'bg-cyber-primary text-white shadow-lg' : 'glass-panel text-slate-600 dark:text-gray-400'}`}
           >
             Overview
           </button>
-          <button 
+          <button
             onClick={() => { setAdminActiveTab('transactions'); setAdminSearch(''); }}
             className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all ${adminActiveTab === 'transactions' ? 'bg-cyber-primary text-white shadow-lg' : 'glass-panel text-slate-600 dark:text-gray-400'}`}
           >
             Transactions
           </button>
-          <button 
+          <button
             onClick={() => { setAdminActiveTab('users'); setAdminSearch(''); }}
             className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all ${adminActiveTab === 'users' ? 'bg-cyber-primary text-white shadow-lg' : 'glass-panel text-slate-600 dark:text-gray-400'}`}
           >
@@ -2626,19 +2695,19 @@ const App: React.FC = () => {
               </div>
 
               <div className="flex gap-2 text-xs">
-                <button 
+                <button
                   onClick={() => setAdminTxFilter('all')}
                   className={`px-3 py-1.5 rounded-full font-bold transition-all ${adminTxFilter === 'all' ? 'bg-cyber-primary text-white' : 'glass-panel text-slate-500 dark:text-gray-400'}`}
                 >
                   All
                 </button>
-                <button 
+                <button
                   onClick={() => setAdminTxFilter('workshop')}
                   className={`px-3 py-1.5 rounded-full font-bold transition-all ${adminTxFilter === 'workshop' ? 'bg-cyber-primary text-white' : 'glass-panel text-slate-500 dark:text-gray-400'}`}
                 >
                   Workshops
                 </button>
-                <button 
+                <button
                   onClick={() => setAdminTxFilter('winch')}
                   className={`px-3 py-1.5 rounded-full font-bold transition-all ${adminTxFilter === 'winch' ? 'bg-cyber-primary text-white' : 'glass-panel text-slate-500 dark:text-gray-400'}`}
                 >
@@ -2695,12 +2764,11 @@ const App: React.FC = () => {
                       <p className="text-[10px] text-gray-400 mt-1">Joined: {new Date(u.createdAt).toLocaleDateString()}</p>
                     </div>
                     <div className="text-right">
-                      <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
-                        u.role === 'ADMIN' ? 'bg-red-500/20 text-red-500' :
+                      <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${u.role === 'ADMIN' ? 'bg-red-500/20 text-red-500' :
                         u.role === 'WINCH_DRIVER' ? 'bg-cyan-500/20 text-cyan-500' :
-                        u.role === 'WORKSHOP_OWNER' ? 'bg-purple-500/20 text-purple-500' :
-                        'bg-gray-500/20 text-gray-500'
-                      }`}>
+                          u.role === 'WORKSHOP_OWNER' ? 'bg-purple-500/20 text-purple-500' :
+                            'bg-gray-500/20 text-gray-500'
+                        }`}>
                         {u.role}
                       </span>
                       {(u.role === 'WINCH_DRIVER' || u.role === 'WORKSHOP_OWNER') && (

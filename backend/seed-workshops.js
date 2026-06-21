@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 
 async function main() {
   const ownerEmail = 'owner@example.com';
-  const password = 'password123';
+  const password = 'Password123';
   const hashedPassword = await bcrypt.hash(password, 10);
 
   // 1. Create/Upsert the workshop owner user

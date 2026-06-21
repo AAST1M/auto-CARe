@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 const prisma = new PrismaClient();
 
 async function main() {
-  const password = 'admin123';
+  const password = 'Admin123';
   const hashedPassword = await bcrypt.hash(password, 10);
 
   // 1. Create/Upsert the Admin User
@@ -24,7 +24,7 @@ async function main() {
   console.log('Seeded Admin User: admin@autocare.ai');
 
   // 2. Create/Upsert a Test Customer User
-  const customerPassword = await bcrypt.hash('password123', 10);
+  const customerPassword = await bcrypt.hash('Password123', 10);
   const customer = await prisma.user.upsert({
     where: { email: 'customer@example.com' },
     update: {},

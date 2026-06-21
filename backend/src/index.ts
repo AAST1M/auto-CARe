@@ -98,9 +98,16 @@ app.use(
 // Reject requests with a JSON body larger than 10kb (prevents DoS via huge payloads)
 app.use(express.json({ limit: '10kb' }));
 
-// ─── SERVE FRONTEND ───────────────────────────────────────────────────────────
+// ─── SERVE FRONTEND (production only) ─────────────────────────────────────────
 const frontendDistPath = path.join(__dirname, '../../frontend/dist');
-app.use(express.static(frontendDistPath));
+const fs = require('fs');
+if (fs.existsSync(frontendDistPath)) {
+  app.use(express.static(frontendDistPath));
+  // ─── SPA CATCH-ALL ──────────────────────────────────────────────────────────
+  app.get('/*splat', (req, res) => {
+    res.sendFile(path.join(frontendDistPath, 'index.html'));
+  });
+}
 
 // ─── GENERAL RATE LIMIT — apply to all /api routes ────────────────────────────
 app.use('/api', apiLimiter);
@@ -115,11 +122,6 @@ app.use('/api/admin', adminRoutes);
 // ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// ─── SPA CATCH-ALL ────────────────────────────────────────────────────────────
-app.get('/*splat', (req, res) => {
-  res.sendFile(path.join(frontendDistPath, 'index.html'));
 });
 
 // ─── GLOBAL ERROR HANDLER ─────────────────────────────────────────────────────
