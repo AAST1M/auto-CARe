@@ -13,8 +13,12 @@ import prisma from './prismaClient';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { setupSocket } from './socket';
+import cookieParser from 'cookie-parser';
 
 dotenv.config();
+
+// Initialize cron jobs
+import './cron';
 
 // ─── SECURITY CHECK: Refuse to start with a weak or missing JWT secret ────────
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -27,6 +31,7 @@ if (!JWT_SECRET || JWT_SECRET.length < 32) {
 // (Password stripping is handled explicitly in the auth routes via `select` or explicit payload mapping in Prisma 6)
 
 const app = express();
+app.use(cookieParser());
 const httpServer = createServer(app);
 const PORT = process.env.PORT || 5001;
 
@@ -34,7 +39,7 @@ const PORT = process.env.PORT || 5001;
 // Restrict which origins can call this API.
 // In development: http://localhost:3000
 // In production: set ALLOWED_ORIGIN in your .env
-const allowedOrigins = (process.env.ALLOWED_ORIGIN || 'http://localhost:3000')
+const allowedOrigins = (process.env.ALLOWED_ORIGIN || 'http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003,http://localhost:3004')
   .split(',')
   .map(o => o.trim());
 
@@ -43,7 +48,11 @@ app.use(
     origin: (origin, callback) => {
       // Allow requests with no origin (e.g. curl, mobile apps, server-to-server)
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
+      
+      // Auto-permit any localhost or 127.0.0.1 port in development
+      const isLocalhost = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+      
+      if (isLocalhost || allowedOrigins.includes(origin)) return callback(null, true);
       callback(new Error(`CORS: Origin '${origin}' is not allowed.`));
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -54,7 +63,14 @@ app.use(
 
 const io = new Server(httpServer, {
   cors: {
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      const isLocalhost = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+      if (isLocalhost || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      callback(new Error(`CORS: Origin '${origin}' is not allowed.`));
+    },
     methods: ['GET', 'POST'],
     credentials: true
   }
@@ -72,7 +88,7 @@ app.use(
         scriptSrc: ["'self'", "'unsafe-inline'"],   // inline scripts needed for Vite SPA
         styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         fontSrc: ["'self'", 'https://fonts.gstatic.com'],
-        imgSrc: ["'self'", 'data:', 'https://picsum.photos'],
+        imgSrc: ["'self'", 'data:', 'https://picsum.photos', 'https://*.tile.openstreetmap.org', 'https://cdnjs.cloudflare.com', 'https://raw.githubusercontent.com'],
         connectSrc: ["'self'", 'http://localhost:5001', 'ws://localhost:5001', 'wss:', 'https://generativelanguage.googleapis.com'],
         frameSrc: ["'none'"],
         objectSrc: ["'none'"],
@@ -95,8 +111,27 @@ app.use(
 );
 
 // ─── BODY SIZE LIMIT ──────────────────────────────────────────────────────────
-// Reject requests with a JSON body larger than 10kb (prevents DoS via huge payloads)
-app.use(express.json({ limit: '10kb' }));
+// Reject requests with a JSON body larger than 50mb
+app.use(express.json({ limit: '50mb' }));
+
+
+
+// ─── GENERAL RATE LIMIT — apply to all /api routes ────────────────────────────
+app.use('/api', apiLimiter);
+
+import partsRoutes from './routes/parts';
+import chatRoutes from './routes/chat';
+import biddingRoutes from './routes/bidding';
+
+// ─── ROUTES ───────────────────────────────────────────────────────────────────
+app.use('/api/auth', authRoutes);
+app.use('/api/workshops', workshopRoutes);
+app.use('/api/winch', winchRoutes);
+app.use('/api/gemini', geminiRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/parts', partsRoutes);
+app.use('/api/chat', chatRoutes);
+app.use('/api/bidding', biddingRoutes);
 
 // ─── SERVE FRONTEND (production only) ─────────────────────────────────────────
 const frontendDistPath = path.join(__dirname, '../../frontend/dist');
@@ -108,16 +143,6 @@ if (fs.existsSync(frontendDistPath)) {
     res.sendFile(path.join(frontendDistPath, 'index.html'));
   });
 }
-
-// ─── GENERAL RATE LIMIT — apply to all /api routes ────────────────────────────
-app.use('/api', apiLimiter);
-
-// ─── ROUTES ───────────────────────────────────────────────────────────────────
-app.use('/api/auth', authRoutes);
-app.use('/api/workshops', workshopRoutes);
-app.use('/api/winch', winchRoutes);
-app.use('/api/gemini', geminiRoutes);
-app.use('/api/admin', adminRoutes);
 
 // ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
@@ -136,5 +161,5 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
 
 httpServer.listen(PORT, () => {
   console.log(`✅  Server running on port ${PORT}`);
-  console.log(`🛡️  Security: Helmet ✓ | CORS (${allowedOrigins.join(', ')}) ✓ | Rate Limiting ✓ | Body limit: 10kb ✓`);
+  console.log(`🛡️  Security: Helmet ✓ | CORS (${allowedOrigins.join(', ')}) ✓ | Rate Limiting ✓ | Body limit: 50mb ✓`);
 });

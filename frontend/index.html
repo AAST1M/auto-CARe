@@ -2,10 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Auto-Care AI</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script>
       tailwind.config = {
         darkMode: 'class',
@@ -43,8 +44,10 @@
     </script>
     <style>
       body {
-        background-color: #000;
-        /* Default text color handling is done in App.tsx via Tailwind classes */
+        background-color: #f8fafc; /* slate-50 */
+      }
+      html.dark body {
+        background-color: #020617; /* cyber-900 */
       }
       /* Custom Scrollbar */
       ::-webkit-scrollbar {
@@ -62,8 +65,8 @@
       .glass-panel {
         /* Light Mode Default */
         background: rgba(255, 255, 255, 0.85);
-        backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
+        backdrop-filter: blur(12px);
         border: 1px solid rgba(59, 130, 246, 0.1);
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
       }

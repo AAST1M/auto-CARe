@@ -5,6 +5,8 @@ export type RootStackParamList = {
   SignUp: undefined;
   Home: undefined;
   WinchMap: undefined;
+  AIDiagnostics: undefined;
+  FindWorkshop: undefined;
 };
 
 export type NavigationProps = NativeStackNavigationProp<RootStackParamList>;

@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Coverage files (added by CoverLens)
+lcov.info
+coverage/
+frontend/.env

@@ -27,7 +27,9 @@ export enum View {
   PROFILE = 'PROFILE',
   SETTINGS = 'SETTINGS',
   SPARE_PARTS = 'SPARE_PARTS',
-  ADMIN_DASHBOARD = 'ADMIN_DASHBOARD'
+  ADMIN_DASHBOARD = 'ADMIN_DASHBOARD',
+  BIDDING_USER = 'BIDDING_USER',
+  BIDDING_WORKSHOP = 'BIDDING_WORKSHOP'
 }
 
 export enum UserRole {
@@ -42,6 +44,7 @@ export interface Message {
   role: 'user' | 'model';
   text: string;
   isThinking?: boolean;
+  action?: 'WINCH' | 'WORKSHOP' | 'ASK_MOBILITY' | string | null;
 }
 
 export interface Workshop {
@@ -51,10 +54,12 @@ export interface Workshop {
   distance: string;
   image: string;
   specialty: string;
-  priceEstimate: string;
+  priceEstimate?: string;
   address?: string;
   hours?: string;
   services?: string[];
+  lat?: number;
+  lng?: number;
   description?: string;
 }
 
@@ -94,6 +99,7 @@ export interface WorkshopAppointment {
 }
 
 export interface UserProfile {
+  id?: string;
   name: string;
   email: string;
   phone: string;
@@ -128,5 +134,29 @@ export interface WinchBooking {
   vehicle: string;
   price: number;
   status: string;
+  createdAt: string;
+}
+
+export interface SparePart {
+  id: string;
+  name: string;
+  category: string;
+  price: number;
+  stock: number;
+  condition: string;
+  image?: string;
+  workshopId?: string;
+  workshop?: { name: string };
+  createdAt: string;
+}
+
+export interface PartOrder {
+  id: string;
+  userId: string;
+  partId: string;
+  quantity: number;
+  totalPrice: number;
+  status: string;
+  part: SparePart;
   createdAt: string;
 }

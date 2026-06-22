@@ -4,6 +4,8 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { AppProvider } from './context/AppContext';
 import { Login } from './pages/Login';
 import { SignUp } from './pages/SignUp';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import OldApp from './OldApp';
 
 /** Shows nothing while auth is being checked — prevents flash to /login */
@@ -35,6 +37,12 @@ const AppRoutes = () => {
       } />
       <Route path="/signup" element={
         <PublicRoute><SignUp /></PublicRoute>
+      } />
+      <Route path="/forgot-password" element={
+        <PublicRoute><ForgotPassword /></PublicRoute>
+      } />
+      <Route path="/reset-password" element={
+        <PublicRoute><ResetPassword /></PublicRoute>
       } />
       {/*
         OldApp is the main app shell.

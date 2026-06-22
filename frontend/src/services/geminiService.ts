@@ -5,7 +5,12 @@ export interface MediaInput {
   data: string; // Base64 string
 }
 
-export const diagnoseCarIssue = async (symptom: string, media?: MediaInput): Promise<string> => {
+export interface DiagnosticResponse {
+  reply: string;
+  action: string | null;
+}
+
+export const diagnoseCarIssue = async (symptom: string, media?: MediaInput, language: string = 'ar'): Promise<DiagnosticResponse> => {
   try {
     const response = await fetch(`${API_URL}/api/gemini/diagnose`, {
       method: 'POST',
@@ -13,7 +18,7 @@ export const diagnoseCarIssue = async (symptom: string, media?: MediaInput): Pro
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
       },
-      body: JSON.stringify({ symptom, media })
+      body: JSON.stringify({ symptom, media, language })
     });
 
     if (!response.ok) {
@@ -21,9 +26,15 @@ export const diagnoseCarIssue = async (symptom: string, media?: MediaInput): Pro
     }
 
     const data = await response.json();
-    return data.response || "I'm having trouble analyzing that right now.";
+    return {
+      reply: data.reply || "I'm having trouble analyzing that right now.",
+      action: data.action || null
+    };
   } catch (error) {
     console.error("Gemini API Error:", error);
-    return "Connection to AI Core interrupted. Please check your network or try again later.";
+    return {
+      reply: "Connection to AI Core interrupted. Please check your network or try again later.",
+      action: null
+    };
   }
 };

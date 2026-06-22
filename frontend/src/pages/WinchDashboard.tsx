@@ -170,11 +170,14 @@ export const WinchDashboard = () => {
                 <p className="text-xs text-gray-500">Drive safely to your customer</p>
               </div>
               <button onClick={() => {
-                alert('Marked as Arrived!');
+                if (socketRef.current && activeBookingId) {
+                  socketRef.current.emit('complete_booking', { bookingId: activeBookingId });
+                }
+                alert('Ride Completed! Your wallet has been credited.');
                 setActiveBookingId(null);
                 setIsOnline(false);
                 refreshUser();
-              }} className="bg-cyber-primary text-white px-4 py-2 rounded-lg font-bold">Arrived</button>
+              }} className="bg-cyber-primary text-white px-4 py-2 rounded-lg font-bold">Arrived / Complete</button>
             </div>
           </div>
         </div>
@@ -216,12 +219,28 @@ export const WinchDashboard = () => {
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1"><MapPin size={14}/> {activeRequest.distance} away</p>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Customer: {activeRequest.customerName} • {activeRequest.issue}</p>
 
-                <div className="bg-slate-100 dark:bg-black/20 p-3 rounded-lg mb-4">
-                  <p className="text-sm font-bold text-slate-900 dark:text-white">Offered Price: {activeRequest.price} EGP</p>
+                <div className="bg-slate-100 dark:bg-black/20 p-3 rounded-lg mb-4 flex items-center justify-between">
+                  <span className="text-sm font-bold text-slate-900 dark:text-white">Price:</span>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => setActiveRequest({...activeRequest, price: Math.max(100, activeRequest.price - 10)})} className="p-1 rounded bg-white/50 dark:bg-white/10 text-slate-900 dark:text-white font-bold">-</button>
+                    <span className="font-bold text-cyber-primary">{activeRequest.price} EGP</span>
+                    <button onClick={() => setActiveRequest({...activeRequest, price: activeRequest.price + 10})} className="p-1 rounded bg-white/50 dark:bg-white/10 text-slate-900 dark:text-white font-bold">+</button>
+                  </div>
                 </div>
 
                 <div className="flex gap-2">
                   <button onClick={handleDecline} className="flex-1 bg-gray-200 dark:bg-gray-700 py-2 rounded-lg font-bold text-slate-700 dark:text-white hover:bg-red-500 hover:text-white transition">Decline</button>
+                  <button onClick={() => {
+                    if (socketRef.current) {
+                      socketRef.current.emit('driver_counter_offer', {
+                        customerSocketId: activeRequest.customerSocketId,
+                        driverId: socketRef.current.id,
+                        price: activeRequest.price
+                      });
+                      alert(`Counter offer of ${activeRequest.price} EGP sent! Waiting for customer...`);
+                      setTimer(30);
+                    }
+                  }} className="flex-1 bg-cyber-primary/20 text-cyber-primary border border-cyber-primary/30 py-2 rounded-lg font-bold hover:bg-cyber-primary/40 transition">Counter</button>
                   <button onClick={handleAccept} className="flex-1 bg-cyber-primary text-white py-2 rounded-lg font-bold shadow-lg hover:bg-blue-600 transition">Accept</button>
                 </div>
               </div>

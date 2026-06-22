@@ -3,6 +3,8 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import prisma from '../prismaClient';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { sendWelcomeEmail, sendPasswordResetEmail } from '../utils/mailer';
+import crypto from 'crypto';
 
 const router = Router();
 
@@ -129,13 +131,37 @@ router.post('/register', async (req, res) => {
       }
     });
 
-    const token = jwt.sign(
+    // Send Welcome Email asynchronously (don't await it so we don't block the response)
+    sendWelcomeEmail(user.email, user.name || 'User', user.role).catch(err => console.error('Failed to send welcome email', err));
+
+    // Generate Tokens
+    const accessToken = jwt.sign(
       { id: user.id, role: user.role },
       process.env.JWT_SECRET || 'secret',
+      { expiresIn: '15m' }
+    );
+    const refreshToken = jwt.sign(
+      { id: user.id },
+      (process.env.JWT_SECRET || 'secret') + '_refresh',
       { expiresIn: '7d' }
     );
+
+    // Save refresh token in DB
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken }
+    });
+
+    // Set cookie
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+
     res.json({
-      token,
+      token: accessToken, // Keep as "token" for frontend backwards compatibility
       user: { id: user.id, email: user.email, name: user.name, role: user.role }
     });
   } catch (error) {
@@ -162,17 +188,184 @@ router.post('/login', async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch) return res.status(400).json({ error: 'Invalid email or password' });
 
-    const token = jwt.sign(
+    // Generate Tokens
+    const accessToken = jwt.sign(
       { id: user.id, role: user.role },
       process.env.JWT_SECRET || 'secret',
+      { expiresIn: '15m' }
+    );
+    const refreshToken = jwt.sign(
+      { id: user.id },
+      (process.env.JWT_SECRET || 'secret') + '_refresh',
       { expiresIn: '7d' }
     );
+
+    // Save refresh token in DB
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken }
+    });
+
+    // Set cookie
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+
     res.json({
-      token,
+      token: accessToken,
       user: { id: user.id, email: user.email, name: user.name, role: user.role }
     });
   } catch (error) {
+    console.error("Login error:", error);
     res.status(500).json({ error: 'Server error. Please try again.' });
+  }
+});
+
+// POST /api/auth/refresh — Refresh the access token
+router.post('/refresh', async (req, res) => {
+  try {
+    const { refreshToken } = req.cookies;
+    if (!refreshToken) return res.status(401).json({ error: 'No refresh token provided' });
+
+    // Verify token
+    jwt.verify(refreshToken, (process.env.JWT_SECRET || 'secret') + '_refresh', async (err: any, decoded: any) => {
+      if (err) return res.status(403).json({ error: 'Invalid refresh token' });
+
+      // Check if user still exists and token matches DB
+      const user = await prisma.user.findUnique({ where: { id: decoded.id } });
+      if (!user || user.refreshToken !== refreshToken) {
+        return res.status(403).json({ error: 'Invalid or revoked refresh token' });
+      }
+
+      // Issue new access token
+      const accessToken = jwt.sign(
+        { id: user.id, role: user.role },
+        process.env.JWT_SECRET || 'secret',
+        { expiresIn: '15m' }
+      );
+
+      // (Optional) Issue new refresh token here for rotation
+      const newRefreshToken = jwt.sign(
+        { id: user.id },
+        (process.env.JWT_SECRET || 'secret') + '_refresh',
+        { expiresIn: '7d' }
+      );
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { refreshToken: newRefreshToken }
+      });
+
+      res.cookie('refreshToken', newRefreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 7 * 24 * 60 * 60 * 1000
+      });
+
+      res.json({ token: accessToken });
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error during refresh' });
+  }
+});
+
+// POST /api/auth/logout — Clear cookies and DB token
+router.post('/logout', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { refreshToken: null }
+    });
+    res.clearCookie('refreshToken');
+    res.json({ success: true, message: 'Logged out successfully' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error during logout' });
+  }
+});
+
+// POST /api/auth/forgot-password
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email || !email.trim()) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
+    if (!user) {
+      // Don't reveal that the user does not exist
+      return res.json({ message: 'If an account exists, a password reset link has been sent.' });
+    }
+
+    // Generate secure token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = await bcrypt.hash(resetToken, 10);
+    const tokenExpiry = new Date(Date.now() + 3600000); // 1 hour from now
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        resetToken: hashedToken,
+        resetTokenExpiry: tokenExpiry
+      }
+    });
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const resetLink = `${frontendUrl}/reset-password?token=${resetToken}&email=${encodeURIComponent(user.email)}`;
+
+    sendPasswordResetEmail(user.email, user.name || 'User', resetLink).catch(err => console.error(err));
+
+    res.json({ message: 'If an account exists, a password reset link has been sent.' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/auth/reset-password
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { email, token, newPassword } = req.body;
+
+    if (!email || !token || !newPassword) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    if (newPassword.length < 8 || !/[A-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters, contain one uppercase letter, and one number' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
+    if (!user || !user.resetToken || !user.resetTokenExpiry) {
+      return res.status(400).json({ error: 'Invalid or expired token' });
+    }
+
+    if (new Date() > user.resetTokenExpiry) {
+      return res.status(400).json({ error: 'Token has expired' });
+    }
+
+    const isValidToken = await bcrypt.compare(token, user.resetToken);
+    if (!isValidToken) {
+      return res.status(400).json({ error: 'Invalid or expired token' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: hashedPassword,
+        resetToken: null,
+        resetTokenExpiry: null
+      }
+    });
+
+    res.json({ message: 'Password has been successfully reset' });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

@@ -1,6 +1,6 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, BackHandler } from 'react-native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { NavigationProps } from '../types/navigation';
 import { Wrench, MapPin, Search, LogOut } from 'lucide-react-native';
@@ -8,6 +8,19 @@ import { Wrench, MapPin, Search, LogOut } from 'lucide-react-native';
 export default function HomeScreen() {
   const { user, logout } = useAuth();
   const navigation = useNavigation<NavigationProps>();
+
+  useFocusEffect(
+    React.useCallback(() => {
+      const onBackPress = () => {
+        // Prevent default behavior (exiting app)
+        return true;
+      };
+
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+
+      return () => subscription.remove();
+    }, [])
+  );
 
   return (
     <ScrollView style={styles.container}>
@@ -34,17 +47,23 @@ export default function HomeScreen() {
           <Text style={styles.cardDescLight}>Stranded? Get a tow truck to your location instantly.</Text>
         </TouchableOpacity>
 
-        {/* AI Diagnostics (Placeholder) */}
-        <TouchableOpacity style={styles.card} onPress={() => {}}>
+        {/* AI Diagnostics */}
+        <TouchableOpacity 
+          style={styles.card} 
+          onPress={() => navigation.navigate('AIDiagnostics')}
+        >
           <View style={styles.cardHeader}>
             <Search size={32} color="#3b82f6" />
             <Text style={styles.cardTitle}>AI Diagnostics</Text>
           </View>
-          <Text style={styles.cardDesc}>Scan your dashboard lights or listen to engine noises.</Text>
+          <Text style={styles.cardDesc}>Chat with our AI to diagnose engine issues or dashboard lights.</Text>
         </TouchableOpacity>
 
-        {/* Find Workshop (Placeholder) */}
-        <TouchableOpacity style={styles.card} onPress={() => {}}>
+        {/* Find Workshop */}
+        <TouchableOpacity 
+          style={styles.card} 
+          onPress={() => navigation.navigate('FindWorkshop')}
+        >
           <View style={styles.cardHeader}>
             <Wrench size={32} color="#10b981" />
             <Text style={styles.cardTitle}>Find Workshop</Text>

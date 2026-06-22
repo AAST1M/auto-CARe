@@ -47,9 +47,26 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
+import { GoogleMap, useJsApiLoader, Marker as GMarker } from '@react-google-maps/api';
+
+const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || '';
+const GMAP_LIBRARIES: ('places' | 'geometry')[] = ['places', 'geometry'];
+const GMAP_DARK_STYLE: google.maps.MapTypeStyle[] = [
+  { elementType: 'geometry', stylers: [{ color: '#1d2c4d' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#8ec3b9' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a3646' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#304a7d' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#2c6675' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0e1626' }] },
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+];
 import { View, Message, Workshop, WinchOffer, CarType, UserProfile, UserBooking, UserRole, WorkshopAppointment } from './types';
 import { WinchLiveUser } from './pages/WinchLiveUser';
+import { BiddingUser } from './pages/BiddingUser';
+import { BiddingWorkshop } from './pages/BiddingWorkshop';
 import { diagnoseCarIssue, MediaInput } from './services/geminiService';
+import { WorkshopDashboard } from './pages/WorkshopDashboard';
+import { SpareParts } from './pages/SpareParts';
 import { useAuth } from './context/AuthContext';
 import {
   validateEmail, validatePassword, validatePasswordMatch,
@@ -66,18 +83,148 @@ const INITIAL_WINCH_OFFERS: WinchOffer[] = [
   { id: 'w2', driverName: 'Karim Ezzat', price: 280, eta: '25 min', rating: 4.6, vehicle: 'Flatbed' },
 ];
 
+
+// Google Maps loader hook shared for negotiation map
+const useGoogleMapsLoader = () => useJsApiLoader({
+  googleMapsApiKey: GOOGLE_MAPS_KEY,
+  libraries: GMAP_LIBRARIES,
+});
+
+// ---------------------------------------------------------------
+// WinchNegotiationMap — Google Maps component for pickup/dropoff
+// ---------------------------------------------------------------
+interface WinchNegotiationMapProps {
+  center: { lat: number; lng: number };
+  pickupCoords: { lat: number; lng: number } | null;
+  dropoffCoords: { lat: number; lng: number } | null;
+  pickingLocationFor: 'pickup' | 'dropoff' | null;
+  onMapClick: (latLng: google.maps.LatLng) => void;
+  onPickupDrag: (latLng: google.maps.LatLng) => void;
+  onDropoffDrag: (latLng: google.maps.LatLng) => void;
+  showDrivers: boolean;
+}
+
+const WinchNegotiationMap: React.FC<WinchNegotiationMapProps> = ({
+  center, pickupCoords, dropoffCoords, pickingLocationFor, onMapClick, onPickupDrag, onDropoffDrag, showDrivers
+}) => {
+  const { isLoaded, loadError } = useGoogleMapsLoader();
+
+  if (loadError) return (
+    <div className="w-full h-full flex items-center justify-center bg-slate-900 text-white">
+      <div className="text-center p-6">
+        <p className="text-2xl mb-2">🗺️</p>
+        <p className="font-bold">Map unavailable</p>
+        <p className="text-xs text-gray-400 mt-2">Add your Google Maps API key to frontend/.env</p>
+        <code className="text-xs text-cyber-primary mt-1 block">VITE_GOOGLE_MAPS_KEY=your_key</code>
+      </div>
+    </div>
+  );
+
+  if (!isLoaded) return (
+    <div className="w-full h-full flex items-center justify-center bg-slate-900">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-10 h-10 border-4 border-cyber-primary border-t-transparent rounded-full animate-spin" />
+        <p className="text-white text-sm font-medium">Loading map...</p>
+      </div>
+    </div>
+  );
+
+  const getCursor = () => pickingLocationFor ? 'crosshair' : 'grab';
+
+  return (
+    <GoogleMap
+      mapContainerStyle={{ width: '100%', height: '100%' }}
+      center={center}
+      zoom={14}
+      onClick={(e) => { if (e.latLng) onMapClick(e.latLng); }}
+      options={{
+        styles: GMAP_DARK_STYLE,
+        disableDefaultUI: false,
+        zoomControl: true,
+        streetViewControl: false,
+        mapTypeControl: false,
+        fullscreenControl: false,
+        draggableCursor: getCursor(),
+        clickableIcons: false,
+      }}
+    >
+      {/* Pickup marker — green */}
+      {pickupCoords && (
+        <GMarker
+          position={pickupCoords}
+          draggable={true}
+          onDragEnd={(e) => { if (e.latLng) onPickupDrag(e.latLng); }}
+          icon={{
+            url: 'https://maps.google.com/mapfiles/ms/icons/green-dot.png',
+            scaledSize: new google.maps.Size(44, 44),
+          }}
+          title="Pickup Location"
+          label={{ text: 'P', color: '#fff', fontWeight: 'bold', fontSize: '13px' }}
+        />
+      )}
+
+      {/* Dropoff marker — red */}
+      {dropoffCoords && (
+        <GMarker
+          position={dropoffCoords}
+          draggable={true}
+          onDragEnd={(e) => { if (e.latLng) onDropoffDrag(e.latLng); }}
+          icon={{
+            url: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png',
+            scaledSize: new google.maps.Size(44, 44),
+          }}
+          title="Dropoff Location"
+          label={{ text: 'D', color: '#fff', fontWeight: 'bold', fontSize: '13px' }}
+        />
+      )}
+
+      {/* Nearby driver markers */}
+      {showDrivers && pickupCoords && (
+        <GMarker
+          position={{ lat: pickupCoords.lat + 0.008, lng: pickupCoords.lng + 0.008 }}
+          icon={{
+            url: 'https://maps.google.com/mapfiles/ms/icons/yellow-dot.png',
+            scaledSize: new google.maps.Size(36, 36),
+          }}
+          title="Winch Driver Nearby"
+        />
+      )}
+    </GoogleMap>
+  );
+};
+
+
 const App: React.FC = () => {
   const authContext = useAuth();
   const { user: authUser, token } = authContext;
 
   // --- Theme State ---
-  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const [workshops, setWorkshops] = useState<Workshop[]>([]);
+  const [chatLanguage, setChatLanguage] = useState<'ar' | 'en'>('ar');
+  const [identifyingPart, setIdentifyingPart] = useState(false);
+  const [identifiedPart, setIdentifiedPart] = useState<{name: string, description: string} | null>(null);
 
   useEffect(() => {
     fetch(`${API_URL}/api/workshops`)
       .then(res => res.json())
-      .then(data => { if (Array.isArray(data)) setWorkshops(data); });
+      .then(data => { 
+        if (Array.isArray(data) && data.length > 0) {
+          setWorkshops(data); 
+        } else {
+          // Dummy fallback
+          setWorkshops([
+            { id: '1', name: 'Al-Ahlia Mechanics', image: 'https://images.unsplash.com/photo-1613214149922-f1809c99b414?w=500', rating: 4.8, distance: '1.2 km', lat: 30.0444, lng: 31.2357, address: 'Tahrir Square', specialty: 'European Cars', services: ['Mechanical', 'Electrical'] },
+            { id: '2', name: 'QuickFix Auto', image: 'https://images.unsplash.com/photo-1517524008697-84bbe3c3fd98?w=500', rating: 4.5, distance: '2.5 km', lat: 30.0500, lng: 31.2400, address: 'Downtown', specialty: 'General Repair', services: ['Tires', 'Mechanical'] }
+          ]);
+        }
+      })
+      .catch(() => {
+        setWorkshops([
+          { id: '1', name: 'Al-Ahlia Mechanics', image: 'https://images.unsplash.com/photo-1613214149922-f1809c99b414?w=500', rating: 4.8, distance: '1.2 km', lat: 30.0444, lng: 31.2357, address: 'Tahrir Square', specialty: 'European Cars', services: ['Mechanical', 'Electrical'] },
+          { id: '2', name: 'QuickFix Auto', image: 'https://images.unsplash.com/photo-1517524008697-84bbe3c3fd98?w=500', rating: 4.5, distance: '2.5 km', lat: 30.0500, lng: 31.2400, address: 'Downtown', specialty: 'General Repair', services: ['Tires', 'Mechanical'] }
+        ]);
+      });
   }, []);
 
   // --- App State ---
@@ -187,17 +334,41 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
+    let socket: ReturnType<typeof io> | null = null;
+    
     if (authContext.user?.role === 'ADMIN' && (view === View.ADMIN_DASHBOARD || view === View.HOME)) {
       fetchAdminData();
+      
+      socket = io(API_URL, { withCredentials: true });
+      socket.on('connect', () => {
+        socket?.emit('join_admin_room');
+      });
+      
+      socket.on('admin_dashboard_update', (data: any) => {
+        if (data.stats) setAdminStats(data.stats);
+        if (data.transactions) setAdminTransactions(data.transactions);
+        if (data.users) setAdminUsers(data.users);
+      });
     }
+
+    return () => {
+      if (socket) {
+        socket.emit('leave_admin_room');
+        socket.disconnect();
+      }
+    };
   }, [authContext.user, view]);
 
   // Sync authUser to user state
   const [locationName, setLocationName] = useState('Locating...');
   const [coords, setCoords] = useState<{ lat: number, lng: number } | null>(null);
+  const [pickupCoords, setPickupCoords] = useState<{ lat: number, lng: number } | null>(null);
+  const [dropoffCoords, setDropoffCoords] = useState<{ lat: number, lng: number } | null>(null);
+  const [pickingLocationFor, setPickingLocationFor] = useState<'pickup' | 'dropoff' | null>(null);
 
   // User Profile State
   const [user, setUser] = useState<UserProfile>({
+    id: authUser?.id || '',
     name: authUser?.name || '',
     email: authUser?.email || '',
     phone: authUser?.phone || '',
@@ -225,6 +396,100 @@ const App: React.FC = () => {
   const [activeOffers, setActiveOffers] = useState<WinchOffer[]>([]);
   const winchSocketRef = useRef<ReturnType<typeof io> | null>(null);
   const winchSocketIdRef = useRef<string>('');
+  const [winchSocket, setWinchSocket] = useState<ReturnType<typeof io> | null>(null);
+
+  // Draggable Bottom Sheet State
+  const [sheetY, setSheetY] = useState(0);
+  const [isSheetDragging, setIsSheetDragging] = useState(false);
+  const [isSheetCollapsed, setIsSheetCollapsed] = useState(false);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const dragStartY = useRef(0);
+  const dragStartOffset = useRef(0);
+  const dragDistanceY = useRef(0);
+
+  const toggleSheetCollapse = () => {
+    const sheetHeight = sheetRef.current?.offsetHeight || 350;
+    const maxCollapsedOffset = sheetHeight - 80;
+    if (isSheetCollapsed) {
+      setSheetY(0);
+      setIsSheetCollapsed(false);
+    } else {
+      setSheetY(maxCollapsedOffset);
+      setIsSheetCollapsed(true);
+    }
+  };
+
+  const handleDragStart = (clientY: number) => {
+    setIsSheetDragging(true);
+    dragStartY.current = clientY;
+    dragStartOffset.current = sheetY;
+    dragDistanceY.current = 0;
+  };
+
+  const handleDragMove = (clientY: number) => {
+    if (!isSheetDragging) return;
+    const deltaY = clientY - dragStartY.current;
+    dragDistanceY.current = Math.abs(deltaY);
+    let newY = dragStartOffset.current + deltaY;
+
+    const sheetHeight = sheetRef.current?.offsetHeight || 350;
+    const maxCollapsedOffset = sheetHeight - 80;
+    
+    if (newY < 0) newY = 0;
+    if (newY > maxCollapsedOffset) newY = maxCollapsedOffset;
+
+    setSheetY(newY);
+  };
+
+  const handleDragEnd = () => {
+    if (!isSheetDragging) return;
+    setIsSheetDragging(false);
+
+    if (dragDistanceY.current < 5) {
+      toggleSheetCollapse();
+      return;
+    }
+
+    const sheetHeight = sheetRef.current?.offsetHeight || 350;
+    const maxCollapsedOffset = sheetHeight - 80;
+
+    if (sheetY < maxCollapsedOffset / 2) {
+      setSheetY(0);
+      setIsSheetCollapsed(false);
+    } else {
+      setSheetY(maxCollapsedOffset);
+      setIsSheetCollapsed(true);
+    }
+  };
+
+  useEffect(() => {
+    if (!isSheetDragging) return;
+
+    const onMouseMove = (e: MouseEvent) => handleDragMove(e.clientY);
+    const onMouseUp = () => handleDragEnd();
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 0) handleDragMove(e.touches[0].clientY);
+    };
+    const onTouchEnd = () => handleDragEnd();
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchend', onTouchEnd);
+
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
+    };
+  }, [isSheetDragging, sheetY]);
+
+  // Reset bottom sheet translation when winch status changes
+  useEffect(() => {
+    setSheetY(0);
+    setIsSheetCollapsed(false);
+  }, [winchStatus]);
 
   // Winch Dashboard State (Driver Side) — kept for AppContext compat
   const [isWinchOnline, setIsWinchOnline] = useState(false);
@@ -269,6 +534,7 @@ const App: React.FC = () => {
     if (authUser) {
       setUser(prev => ({
         ...prev,
+        id: authUser.id || prev.id,
         name: authUser.name || prev.name,
         email: authUser.email || prev.email,
         phone: authUser.phone || prev.phone,
@@ -281,10 +547,13 @@ const App: React.FC = () => {
 
       setView(currentView => {
         if (currentView === View.ONBOARDING || currentView === View.LOGIN || currentView === View.SIGN_UP) {
-          if (authUser.role === 'ADMIN') return View.ADMIN_DASHBOARD;
-          if (authUser.role === 'WINCH_DRIVER') return View.WINCH_DASHBOARD;
-          if (authUser.role === 'WORKSHOP_OWNER') return View.WORKSHOP_DASHBOARD;
-          return View.HOME;
+          let newRootView = View.HOME;
+          if (authUser.role === 'ADMIN') newRootView = View.ADMIN_DASHBOARD;
+          if (authUser.role === 'WINCH_DRIVER') newRootView = View.WINCH_DASHBOARD;
+          if (authUser.role === 'WORKSHOP_OWNER') newRootView = View.WORKSHOP_DASHBOARD;
+          
+          setHistory([newRootView]);
+          return newRootView;
         }
         return currentView;
       });
@@ -343,27 +612,100 @@ const App: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
-  // Geolocation Logic
+  // Geolocation Logic — GPS first, then IP fallback
   useEffect(() => {
+    const reverseGeocode = async (lat: number, lng: number) => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`,
+          { headers: { 'Accept-Language': 'en', 'User-Agent': 'AutoCareAI/1.0' } }
+        );
+        const data = await res.json();
+        if (data && data.address) {
+          const city = data.address.city || data.address.town || data.address.village || data.address.county || 'Unknown';
+          const neighborhood = data.address.neighbourhood || data.address.suburb || data.address.road || '';
+          return neighborhood ? `${neighborhood}, ${city}` : city;
+        }
+      } catch (e) {
+        console.error('Reverse geocoding failed', e);
+      }
+      return null;
+    };
+
+    const fetchIPLocation = async () => {
+      try {
+        // Free IP geolocation — no API key needed
+        const res = await fetch('https://ip-api.com/json/?fields=lat,lon,city,regionName,country,status');
+        const data = await res.json();
+        if (data.status === 'success') {
+          setCoords({ lat: data.lat, lng: data.lon });
+          const name = await reverseGeocode(data.lat, data.lon);
+          setLocationName(name || `${data.city}, ${data.regionName}`);
+          return;
+        }
+      } catch (e) {
+        console.error('IP geolocation failed', e);
+      }
+      // Ultimate fallback
+      setCoords({ lat: 30.0444, lng: 31.2357 });
+      setLocationName('Cairo, Egypt');
+    };
+
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setCoords({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          });
-          // Simulated Reverse Geocode for demo
-          setLocationName('Smart Village, Cairo (GPS)');
+        async (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          setCoords({ lat, lng });
+          const name = await reverseGeocode(lat, lng);
+          setLocationName(name || 'Location Found');
         },
-        (error) => {
-          console.error("Error getting location", error);
-          setLocationName('Location Unavailable');
+        async (error) => {
+          console.warn('GPS unavailable, trying IP location...', error.message);
+          await fetchIPLocation();
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 60000,
         }
       );
     } else {
-      setLocationName('GPS Not Supported');
+      fetchIPLocation();
     }
   }, []);
+
+  const locateUserExactly = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          setCoords({ lat, lng });
+          if (pickingLocationFor === 'dropoff') {
+            setDropoffCoords({ lat, lng });
+            setPickingLocationFor(null);
+          } else {
+            setPickupCoords({ lat, lng });
+            if (pickingLocationFor === 'pickup') {
+              setPickingLocationFor(null);
+            }
+          }
+        },
+        (error) => {
+          console.warn('GPS exact locate failed:', error.message);
+          alert('Could not retrieve your exact GPS coordinates. Please check your browser location permissions.');
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 0,
+        }
+      );
+    } else {
+      alert('Geolocation is not supported by your browser.');
+    }
+  };
 
   // Title Flashing Effect for Background Notification
   useEffect(() => {
@@ -381,23 +723,44 @@ const App: React.FC = () => {
   }, [activeWinchRequest]);
 
   useEffect(() => {
-    // Simulation of incoming request for Winch Dashboard
-    // Only receive requests if Online AND Not Busy
-    if (isWinchOnline && !isWinchBusy && !activeWinchRequest) {
-      const timeout = setTimeout(() => {
+    // REAL Socket.IO logic for Winch Driver receiving requests
+    const socket = winchSocket;
+    if (!socket) return;
+
+    if (isWinchOnline && !isWinchBusy) {
+      socket.emit('driver_online', {
+        driverId: user?.id || authContext.user?.id || 'd1',
+        driverName: user?.name || authContext.user?.name || 'Winch Driver',
+        vehicle: 'Flatbed Heavy-Duty',
+        price: 500,
+        lat: coords?.lat,
+        lng: coords?.lng
+      });
+
+      const handleNewRequest = (data: any) => {
         setActiveWinchRequest({
-          id: 'wr1',
-          car: 'Toyota Corolla (2020)',
-          distance: '5km',
-          issue: 'Breakdown',
-          price: 350,
+          id: data.customerId, // Using customerId as request ID
+          car: data.car,
+          distance: data.distance || 'Nearby',
+          issue: data.issue,
+          price: data.price,
+          customerSocketId: data.customerSocketId,
+          customerName: data.customerName,
           userCounterOffer: null
         });
         setWinchRequestTimer(30);
-      }, 5001); // 5s delay to find a request
-      return () => clearTimeout(timeout);
+      };
+
+      socket.on('new_request', handleNewRequest);
+
+      return () => {
+        socket.off('new_request', handleNewRequest);
+        socket.emit('driver_offline');
+      };
+    } else {
+      socket.emit('driver_offline');
     }
-  }, [isWinchOnline, isWinchBusy, activeWinchRequest]);
+  }, [winchSocket, isWinchOnline, isWinchBusy, user, coords, authContext.user]);
 
   useEffect(() => {
     // Winch Timer countdown
@@ -411,23 +774,48 @@ const App: React.FC = () => {
 
 
   // --- Navigation Helpers ---
+  useEffect(() => {
+    const handlePopState = () => {
+      if (history.length > 1) {
+        const newHistory = [...history];
+        newHistory.pop();
+        setHistory(newHistory);
+        setView(newHistory[newHistory.length - 1]);
+      } else {
+        // Trapping the user in the app if they press physical back button at root
+        if (authContext.user) {
+          window.history.pushState(null, '', window.location.href);
+        }
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    
+    // Ensure there's an initial state to pop
+    if (authContext.user && history.length === 1) {
+      window.history.replaceState(null, '', window.location.href);
+      window.history.pushState(null, '', window.location.href);
+    }
+    
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [history, authContext.user]);
+
   const navigate = (newView: View) => {
     setHistory([...history, newView]);
     setView(newView);
+    window.history.pushState(null, '', window.location.href);
   };
 
   const goBack = () => {
     if (history.length > 1) {
-      const newHistory = [...history];
-      newHistory.pop();
-      setHistory(newHistory);
-      setView(newHistory[newHistory.length - 1]);
+      window.history.back(); // This triggers the popstate event
     }
   };
 
   const toggleTheme = () => setIsDarkMode(!isDarkMode);
 
-  // --- Logic Functions ---
+  // --- Utility Functions ---
+
+  // --- Utility Functions ---
 
   // Helper to convert Blob to Base64
   const blobToBase64 = (blob: Blob): Promise<string> => {
@@ -453,11 +841,31 @@ const App: React.FC = () => {
     setInput('');
     setIsTyping(true);
 
+    const token = localStorage.getItem('token');
+    if (token) {
+      fetch(`${API_URL}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ role: 'user', content: userMsg.text, mediaType: media?.mimeType, mediaData: media?.data })
+      }).catch(console.error);
+    }
+    setIsTyping(true);
+
     // Call Gemini Service
-    const responseText = await diagnoseCarIssue(userMsg.text, media);
+    const aiData = await diagnoseCarIssue(userMsg.text, media, chatLanguage);
+    const cleanText = aiData.reply.trim();
 
     setIsTyping(false);
-    setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), role: 'model', text: responseText }]);
+    
+    setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), role: 'model', text: cleanText, action: aiData.action }]);
+
+    if (token) {
+      fetch(`${API_URL}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ role: 'model', content: cleanText })
+      }).catch(console.error);
+    }
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -497,22 +905,67 @@ const App: React.FC = () => {
   };
 
   // Winch Request Logic (Customer Side) — Real Socket.IO
+  useEffect(() => {
+    if (winchSocketRef.current) {
+      if (!winchSocket) {
+        setWinchSocket(winchSocketRef.current);
+      }
+    } else {
+      // Setup global socket for winch features
+      const socket = io(API_URL, { withCredentials: true });
+      winchSocketRef.current = socket;
+      setWinchSocket(socket);
+      
+      socket.on('connect', () => {
+        const userId = user?.id || authContext.user?.id;
+        if (userId) socket.emit('register_user', userId);
+      });
+
+      socket.on('booking_started', (data: { bookingId: string }) => {
+        setLiveBookingId(data.bookingId);
+        setIsWinchBusy(true); // driver view
+        navigate(View.WINCH_LIVE_MAP);
+      });
+
+      socket.on('booking_completed', () => {
+        alert('Your ride is completed!');
+        setLiveBookingId(null);
+        setIsWinchBusy(false);
+        setWinchStatus('idle');
+        setActiveWinchRequest(null);
+        
+        // Refresh profile and wallet
+        authContext.refreshUser();
+        
+        const currentRole = user?.role || authContext.user?.role;
+        if (currentRole === 'WINCH_DRIVER') {
+          navigate(View.WINCH_DASHBOARD);
+        } else {
+          navigate(View.HOME);
+        }
+      });
+    }
+  }, [user, isWinchOnline, winchSocket, authContext.user]);
+
+  // Reactive register_user emit when user changes
+  useEffect(() => {
+    const socket = winchSocket;
+    const userId = user?.id || authContext.user?.id;
+    if (socket && userId) {
+      socket.emit('register_user', userId);
+    }
+  }, [user?.id, authContext.user?.id, winchSocket]);
+
   const requestWinch = () => {
     setWinchStatus('searching');
     setActiveOffers([]);
+    navigate(View.WINCH_NEGOTIATION);
 
-    // Connect socket
-    const socket = io(API_URL, { withCredentials: true });
-    winchSocketRef.current = socket;
+    const socket = winchSocketRef.current;
+    if (!socket) return;
 
-    socket.on('connect', () => {
-      winchSocketIdRef.current = socket.id ?? '';
-      if (user?.id) socket.emit('register_user', user.id);
-      // Ask for current online drivers
-      socket.emit('get_drivers');
-    });
+    socket.emit('get_drivers');
 
-    // Receive list of online drivers
     socket.on('drivers_updated', (drivers: any[]) => {
       if (drivers.length > 0) {
         const mapped: WinchOffer[] = drivers.map((d: any) => ({
@@ -529,30 +982,37 @@ const App: React.FC = () => {
         setActiveOffers(mapped);
         setWinchStatus('negotiating');
       } else {
-        // No drivers online yet — keep searching
         setWinchStatus('searching');
       }
     });
 
-    // Driver accepted → booking created on server
     socket.on('booking_confirmed', (data: { bookingId: string; driverName: string; vehicle: string; price: number }) => {
       setLiveBookingId(data.bookingId);
       setWinchStatus('confirmed');
       navigate(View.WINCH_LIVE_MAP);
     });
 
-    // Driver declined
+    // booking_completed is handled globally now
+
     socket.on('request_declined', (data: { message: string }) => {
       alert(data.message);
-      // Refresh driver list
       socket.emit('get_drivers');
       setWinchStatus('negotiating');
     });
 
-    // Driver became unavailable
     socket.on('driver_unavailable', (data: { message: string }) => {
       alert(data.message);
       socket.emit('get_drivers');
+    });
+
+    socket.on('driver_countered', (data: { driverId: string; price: number }) => {
+      setActiveOffers(prev => prev.map(offer => {
+        if (offer.id === data.driverId || (offer as any).driverSocketId === data.driverId) {
+          return { ...offer, price: data.price };
+        }
+        return offer;
+      }));
+      alert('Driver has countered your offer! Check the new price.');
     });
   };
 
@@ -569,26 +1029,51 @@ const App: React.FC = () => {
     const offer = activeOffers.find(o => o.id === offerId);
     if (!offer) return;
     const socket = winchSocketRef.current;
-    if (!socket) return;
-    // Send counter offer — server will forward to driver (driver sees updated price)
-    // For now we update locally and resend the request
+    const userId = user?.id || authContext.user?.id;
+    if (!socket || !userId) return;
+    
     alert(`Counter offer of ${offer.price} EGP sent to driver. Waiting...`);
+    
+    const carName = [user.carYear, user.carBrand, user.carModel].filter(Boolean).join(' ') || 'My Car';
+    
+    socket.emit('request_driver', {
+      customerId: userId,
+      customerName: user.name || authContext.user?.name || 'Customer',
+      driverSocketId: (offer as any).driverSocketId || offer.id,
+      car: carName,
+      issue: 'Breakdown assistance',
+      price: offer.price,
+      lat: coords?.lat || 30.0444,
+      lng: coords?.lng || 31.2357,
+    });
+  };
+
+  const handleRejectOffer = (offerId: string) => {
+    setActiveOffers(prev => prev.map(offer => {
+      if (offer.id === offerId) {
+        return { ...offer, status: 'rejected' };
+      }
+      return offer;
+    }));
   };
 
   const handleAcceptOffer = (offer: WinchOffer) => {
     const socket = winchSocketRef.current;
-    if (!socket || !user?.id) return;
+    const userId = user?.id || authContext.user?.id;
+    if (!socket || !userId) return;
     setWinchStatus('searching'); // show searching while driver confirms
 
+    const carName = [user.carYear, user.carBrand, user.carModel].filter(Boolean).join(' ') || 'My Car';
+    
     socket.emit('request_driver', {
-      customerId: user.id,
-      customerName: user.name || 'Customer',
+      customerId: userId,
+      customerName: user.name || authContext.user?.name || 'Customer',
       driverSocketId: (offer as any).driverSocketId || offer.id,
-      car: `${user.carBrand || 'My'} ${user.carModel || 'Car'}`,
+      car: carName,
       issue: 'Breakdown assistance',
       price: offer.price,
-      lat: 30.0444,
-      lng: 31.2357,
+      lat: coords?.lat || 30.0444,
+      lng: coords?.lng || 31.2357,
     });
   };
 
@@ -612,45 +1097,51 @@ const App: React.FC = () => {
             serviceType: 'General Inspection',
             time: dateStr,
             carDetails: carInfo,
-            price: priceVal
+            price: priceVal,
+            paymentMethod: paymentMethod
           })
         });
 
         if (!response.ok) {
-          throw new Error('Failed to book appointment on backend');
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to book appointment on backend');
         }
 
         await fetchAppointments();
         navigate(View.SUCCESS);
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error booking appointment:', error);
-        alert('Could not book appointment. Please try again.');
+        alert(error.message || 'Could not book appointment. Please try again.');
       }
     }
   };
 
   // Winch Dashboard Logic (Driver Side)
   const handleWinchAccept = () => {
-    if (activeWinchRequest) {
-      setUser(prev => ({ ...prev, walletBalance: prev.walletBalance + activeWinchRequest.price }));
-      alert(`Accepted! Request assigned. +${activeWinchRequest.price} EGP (Pending completion)`);
+    const socket = winchSocketRef.current;
+    if (activeWinchRequest && socket && user) {
+      socket.emit('accept_request', {
+        customerSocketId: (activeWinchRequest as any).customerSocketId,
+        customerId: activeWinchRequest.id,
+        driverId: user.id,
+        driverName: user.name || 'Winch Driver',
+        vehicle: 'Flatbed Heavy-Duty',
+        price: activeWinchRequest.price,
+      });
       setActiveWinchRequest(null);
+      setIsWinchBusy(true);
+      // Let backend trigger 'booking_started'
     }
   };
 
   const handleWinchDecline = () => {
+    const socket = winchSocketRef.current;
+    if (activeWinchRequest && socket) {
+      socket.emit('decline_request', { customerSocketId: (activeWinchRequest as any).customerSocketId });
+    }
     setActiveWinchRequest(null);
   };
 
-  const handleWinchDriverNegotiate = (newPrice: number) => {
-    // Driver sets a new price in response to a counter
-    setActiveWinchRequest((prev: any) => ({ ...prev, price: newPrice, userCounterOffer: null }));
-    alert(`You proposed ${newPrice} EGP. Waiting for user...`);
-    // Simulate user accept after delay
-    setTimeout(() => {
-      handleWinchAccept(); // User accepted
-    }, 2000);
-  };
 
   const handleWinchWithdraw = () => {
     if (user.walletBalance > 0) {
@@ -1561,7 +2052,7 @@ const App: React.FC = () => {
             Core Services
           </h3>
           <div className="grid grid-cols-3 gap-4">
-            <button onClick={() => navigate(View.AI_CHAT)} className="flex flex-col items-center gap-2 group">
+            <button data-testid="ai-chat-btn" onClick={() => navigate(View.AI_CHAT)} className="flex flex-col items-center gap-2 group">
               <div className="w-16 h-16 rounded-2xl glass-panel flex items-center justify-center group-hover:bg-cyber-primary/20 group-hover:border-cyber-primary transition-all shadow-[0_0_10px_rgba(59,130,246,0.1)]">
                 <MessageSquare className="text-cyber-primary dark:text-cyber-accent group-hover:scale-110 transition-transform" />
               </div>
@@ -1573,12 +2064,34 @@ const App: React.FC = () => {
               </div>
               <span className="text-xs text-slate-600 dark:text-gray-300">Winch</span>
             </button>
-            <button onClick={() => navigate(View.WORKSHOP_LIST)} className="flex flex-col items-center gap-2 group">
+            <button data-testid="repair-btn" onClick={() => navigate(View.WORKSHOP_LIST)} className="flex flex-col items-center gap-2 group">
               <div className="w-16 h-16 rounded-2xl glass-panel flex items-center justify-center group-hover:bg-cyber-primary/20 group-hover:border-cyber-primary transition-all">
                 <Wrench className="text-cyber-primary dark:text-cyber-accent group-hover:scale-110 transition-transform" />
               </div>
               <span className="text-xs text-slate-600 dark:text-gray-300">Repair</span>
             </button>
+          </div>
+        </div>
+
+        {/* Live Bidding System Banner */}
+        <div 
+          className="relative rounded-2xl overflow-hidden h-32 shadow-lg group cursor-pointer border border-cyber-primary/30" 
+          onClick={() => navigate(View.BIDDING_USER)}
+        >
+          <div className="absolute inset-0 bg-gradient-to-r from-blue-900 to-cyber-900 opacity-90"></div>
+          <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-30"></div>
+          <div className="absolute inset-0 p-5 flex items-center justify-between">
+            <div className="text-white">
+              <span className="bg-green-500 text-white text-[10px] font-bold px-2 py-1 rounded w-fit mb-1 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
+                LIVE BIDS
+              </span>
+              <h3 className="text-lg font-bold">Mechanic Bidding</h3>
+              <p className="text-xs text-blue-200 mt-1 max-w-[200px]">Post your issue and get live competitive prices from workshops.</p>
+            </div>
+            <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <Activity className="text-cyber-accent" size={24} />
+            </div>
           </div>
         </div>
 
@@ -1651,72 +2164,267 @@ const App: React.FC = () => {
     </div>
   );
 
-  const renderSpareParts = () => (
-    <div className="flex flex-col h-screen p-6 pt-12">
-      <button onClick={goBack} className="mb-6 w-fit text-slate-900 dark:text-white" title="Go Back" aria-label="Go Back"><ArrowLeft /></button>
-      <h2 className="text-2xl font-bold font-display text-slate-900 dark:text-white mb-6">Spare Parts</h2>
-      <div className="glass-panel p-6 rounded-2xl flex flex-col items-center justify-center text-center space-y-4">
-        <Package size={64} className="text-cyber-primary/50" />
-        <p className="text-gray-500">Search for specific parts or upload a photo of the broken part for AI identification.</p>
-        <button className="bg-cyber-primary text-white px-6 py-2 rounded-xl font-bold">Upload Photo</button>
-      </div>
-      <div className="mt-8">
-        <h3 className="font-bold text-slate-900 dark:text-white mb-4">Categories</h3>
-        <div className="grid grid-cols-2 gap-4">
-          {['Brakes', 'Engine', 'Suspension', 'Electric'].map(cat => (
-            <div key={cat} className="glass-panel p-4 rounded-xl text-center text-slate-700 dark:text-gray-300 font-bold hover:border-cyber-primary cursor-pointer border border-transparent">
-              {cat}
+  const renderSpareParts = () => {
+    const mockParts = [
+      { id: 1, name: 'Brake Pads (Ceramic)', price: '450 EGP', stock: 12, img: 'https://images.unsplash.com/photo-1486262715619-67b85e0b08d3?w=500&h=500&fit=crop' },
+      { id: 2, name: 'Oil Filter (Premium)', price: '120 EGP', stock: 50, img: 'https://images.unsplash.com/photo-1635830625698-3b9bd74671ca?w=500&h=500&fit=crop' },
+      { id: 3, name: 'Spark Plugs (Set of 4)', price: '320 EGP', stock: 8, img: 'https://images.unsplash.com/photo-1605335194451-b850454cbcf1?w=500&h=500&fit=crop' },
+      { id: 4, name: 'Car Battery 12V 70Ah', price: '1850 EGP', stock: 3, img: 'https://images.unsplash.com/photo-1621255805562-b13c7c223c72?w=500&h=500&fit=crop' },
+      { id: 5, name: 'Alternator 12V 90A', price: '2100 EGP', stock: 2, img: 'https://images.unsplash.com/photo-1530268578403-bf68f27668b9?w=500&h=500&fit=crop' }
+    ];
+
+    const filteredParts = identifiedPart 
+      ? mockParts.filter(p => p.name.toLowerCase().includes(identifiedPart.name.toLowerCase()) || identifiedPart.name.toLowerCase().includes(p.name.split(' ')[0].toLowerCase()))
+      : mockParts;
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setIdentifyingPart(true);
+      setIdentifiedPart(null);
+
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const base64Data = (reader.result as string).split(',')[1];
+        
+        try {
+          const tokenVal = localStorage.getItem('token');
+          const res = await fetch(`${API_URL}/api/gemini/identify-part`, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              ...(tokenVal ? { 'Authorization': `Bearer ${tokenVal}` } : {})
+            },
+            body: JSON.stringify({
+              media: {
+                mimeType: file.type,
+                data: base64Data
+              }
+            })
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            setIdentifiedPart({ name: data.partName, description: data.description });
+          } else {
+            alert('Failed to identify part. Please try again.');
+          }
+        } catch (error) {
+          console.error('Error identifying part:', error);
+          alert('Network error. Please try again.');
+        } finally {
+          setIdentifyingPart(false);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+      };
+      reader.readAsDataURL(file);
+    };
+
+    return (
+      <div className="flex flex-col h-screen p-6 pt-12 overflow-y-auto">
+        <button onClick={goBack} className="mb-6 w-fit text-slate-900 dark:text-white" title="Go Back" aria-label="Go Back"><ArrowLeft /></button>
+        <h2 className="text-2xl font-bold font-display text-slate-900 dark:text-white mb-6">Spare Parts Market</h2>
+        <div className="glass-panel p-6 rounded-2xl flex flex-col items-center justify-center text-center space-y-4 mb-8">
+          <Package size={48} className="text-cyber-primary/80" />
+          <p className="text-sm text-gray-500">Search for specific parts or upload a photo of the broken part for AI identification.</p>
+          <input 
+            type="file" 
+            accept="image/*" 
+            className="hidden" 
+            ref={fileInputRef} 
+            onChange={handleFileChange}
+            aria-label="Upload photo of broken part"
+            title="Upload photo of broken part"
+          />
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            disabled={identifyingPart}
+            className="bg-cyber-primary text-white px-6 py-2 rounded-xl font-bold w-full disabled:opacity-50 flex justify-center items-center gap-2"
+          >
+            {identifyingPart ? <><div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" /> Identifying...</> : 'Identify Part via AI'}
+          </button>
+          
+          {identifiedPart && (
+            <div className="mt-4 p-4 bg-green-500/10 border border-green-500/30 rounded-xl text-left w-full">
+              <h4 className="font-bold text-green-600 dark:text-green-400 mb-1">Identified: {identifiedPart.name}</h4>
+              <p className="text-xs text-gray-600 dark:text-gray-300">{identifiedPart.description}</p>
+              <button 
+                onClick={() => setIdentifiedPart(null)}
+                className="mt-2 text-xs text-cyber-primary font-bold hover:underline"
+              >
+                Clear Search
+              </button>
             </div>
-          ))}
+          )}
         </div>
+        
+        <h3 className="font-bold text-slate-900 dark:text-white mb-4">
+          {identifiedPart ? `Matching Parts (${filteredParts.length})` : 'Available in Stock'}
+        </h3>
+        
+        {filteredParts.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <p>No matching parts found in stock.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4 pb-20">
+            {filteredParts.map(part => (
+              <div key={part.id} className="glass-panel rounded-xl overflow-hidden shadow-lg border border-white/5 flex flex-col">
+                <img src={part.img} alt={part.name} className="w-full h-32 object-cover" />
+                <div className="p-3 flex flex-col flex-1">
+                  <h4 className="font-bold text-sm text-slate-900 dark:text-white leading-tight mb-1">{part.name}</h4>
+                  <p className="text-xs text-gray-500 mb-2">Stock: {part.stock}</p>
+                  <div className="mt-auto flex justify-between items-center">
+                    <span className="font-bold text-cyber-primary">{part.price}</span>
+                    <button className="bg-slate-900 dark:bg-white text-white dark:text-black p-1.5 rounded-lg" aria-label="Buy"><ChevronRight size={16} /></button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderWinchNegotiation = () => {
     return (
       <div className="flex flex-col h-screen bg-slate-100 dark:bg-cyber-900 relative">
-        {/* Map Background (Simulated) */}
-        <div className="absolute inset-0 bg-slate-200 dark:bg-gray-800 opacity-50 z-0 overflow-hidden">
-          <div className="absolute inset-0 bg-[radial-gradient(#3b82f6_1px,transparent_1px)] [background-size:20px_20px] opacity-20"></div>
-          {/* Radar Effect */}
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 border-2 border-cyber-primary/30 rounded-full animate-ping"></div>
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-cyber-primary dark:bg-cyber-accent rounded-full shadow-[0_0_20px_rgba(6,182,212,1)] z-10"></div>
+        {/* Google Maps Background */}
+        <div className="absolute inset-0 z-0">
+          <WinchNegotiationMap
+            center={coords || { lat: 30.0444, lng: 31.2357 }}
+            pickupCoords={pickupCoords}
+            dropoffCoords={dropoffCoords}
+            pickingLocationFor={pickingLocationFor}
+            onMapClick={(latLng) => {
+              if (pickingLocationFor === 'pickup') {
+                setPickupCoords({ lat: latLng.lat(), lng: latLng.lng() });
+                setPickingLocationFor(null);
+              } else if (pickingLocationFor === 'dropoff') {
+                setDropoffCoords({ lat: latLng.lat(), lng: latLng.lng() });
+                setPickingLocationFor(null);
+              }
+            }}
+            onPickupDrag={(latLng) => setPickupCoords({ lat: latLng.lat(), lng: latLng.lng() })}
+            onDropoffDrag={(latLng) => setDropoffCoords({ lat: latLng.lat(), lng: latLng.lng() })}
+            showDrivers={winchStatus !== 'idle' && activeOffers.length > 0}
+          />
+        </div>
 
-          {/* Simulated Winch Drivers moving */}
-          {activeOffers.length > 0 && (
-            <div className="absolute top-[40%] left-[60%] w-8 h-8 text-yellow-500 dark:text-yellow-400 animate-pulse transition-all duration-1000">
-              <Truck />
+        {/* Top Controls */}
+        <div className="relative z-10 p-4 pt-12 flex justify-between pointer-events-none">
+          <button onClick={() => { setWinchStatus('idle'); setPickingLocationFor(null); goBack(); }} className="p-3 glass-panel rounded-full text-slate-900 dark:text-white pointer-events-auto" title="Go Back" aria-label="Go Back"><ArrowLeft /></button>
+          {pickingLocationFor && (
+            <div className="glass-panel px-4 py-2 rounded-full flex items-center gap-2 pointer-events-auto bg-cyber-primary text-white">
+              <span className="text-sm font-bold">Tap on map to select {pickingLocationFor}</span>
             </div>
           )}
         </div>
 
-        {/* Top Controls */}
-        <div className="relative z-10 p-4 pt-12 flex justify-between">
-          <button onClick={() => { setWinchStatus('idle'); goBack(); }} className="p-3 glass-panel rounded-full text-slate-900 dark:text-white" title="Go Back" aria-label="Go Back"><ArrowLeft /></button>
-          <div className="glass-panel px-4 py-2 rounded-full flex items-center gap-2">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            <span className="text-xs font-bold text-slate-900 dark:text-white">{locationName !== 'Locating...' ? 'GPS Active' : 'Locating...'}</span>
+        {/* Floating Locate Button on Map */}
+        {winchStatus === 'idle' && (
+          <div 
+            style={{
+              transform: `translateY(${sheetY}px)`,
+              transition: isSheetDragging ? 'none' : 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+            }}
+            className="absolute right-4 bottom-[380px] z-30 flex flex-col gap-2 pointer-events-auto"
+          >
+            <button 
+              onClick={locateUserExactly} 
+              className="p-3.5 bg-white dark:bg-slate-800 text-cyber-primary hover:scale-105 active:scale-95 rounded-full shadow-xl border border-gray-200 dark:border-gray-700 transition-all flex items-center justify-center pointer-events-auto"
+              title="Pin my exact location"
+              aria-label="Pin my exact location"
+            >
+              <Navigation className="w-6 h-6 transform rotate-45" />
+            </button>
           </div>
-        </div>
+        )}
 
         {/* Bottom Sheet */}
-        <div className="absolute bottom-0 left-0 right-0 glass-panel rounded-t-3xl p-6 pb-10 z-20 border-t border-cyber-primary/30 min-h-[350px]">
-          <div className="w-12 h-1 bg-gray-400 dark:bg-gray-600 rounded-full mx-auto mb-6"></div>
+        <div 
+          ref={sheetRef}
+          style={{
+            transform: `translateY(${sheetY}px)`,
+            transition: isSheetDragging ? 'none' : 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+          }}
+          className="absolute bottom-0 left-0 right-0 glass-panel rounded-t-3xl p-6 pb-10 z-20 border-t border-cyber-primary/30 max-h-[60vh] overflow-y-auto select-none"
+        >
+          <div 
+            onMouseDown={(e) => handleDragStart(e.clientY)}
+            onTouchStart={(e) => {
+              if (e.touches.length > 0) {
+                handleDragStart(e.touches[0].clientY);
+              }
+            }}
+            className="w-full py-4 -mt-4 mb-2 flex justify-center cursor-grab active:cursor-grabbing select-none group pointer-events-auto"
+            title="Drag or click to collapse/expand"
+          >
+            <div className="w-16 h-1.5 bg-gray-400 dark:bg-gray-600 group-hover:bg-cyber-primary rounded-full transition-colors duration-200"></div>
+          </div>
 
           {winchStatus === 'idle' && (
-            <div className="text-center">
-              <h3 className="text-2xl font-display font-bold mb-2 text-slate-900 dark:text-white">Request Winch</h3>
-              <p className="text-gray-500 dark:text-gray-400 mb-6">Negotiate prices in real-time with nearby drivers.</p>
-              <button onClick={requestWinch} className="w-full bg-cyber-primary py-4 rounded-xl font-bold shadow-[0_0_20px_rgba(59,130,246,0.6)] animate-pulse text-white">Broadcast Request</button>
+            <div className="flex flex-col gap-4">
+              <h3 className="text-2xl font-display font-bold text-slate-900 dark:text-white">Request Winch</h3>
+              
+              <div className="flex flex-col gap-3">
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setPickingLocationFor('pickup')}
+                    className={`flex-1 p-4 rounded-xl text-left border transition-all ${pickupCoords ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <MapPin className={pickupCoords ? 'text-green-500' : 'text-cyber-primary'} />
+                      <div>
+                        <h4 className="font-bold text-sm text-slate-900 dark:text-white">Pickup Location</h4>
+                        <p className="text-xs text-gray-500">{pickupCoords ? 'Location Selected (Drag pin to refine)' : 'Tap to select on map'}</p>
+                      </div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      locateUserExactly();
+                    }}
+                    className="px-4 bg-white dark:bg-gray-800 text-cyber-primary hover:text-blue-600 dark:hover:text-cyber-primary border border-gray-200 dark:border-gray-700 rounded-xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center shadow-sm"
+                    title="Auto-detect current location"
+                    aria-label="Auto-detect current location"
+                  >
+                    <Navigation className="w-5 h-5 transform rotate-45" />
+                  </button>
+                </div>
+
+                <button 
+                  onClick={() => setPickingLocationFor('dropoff')}
+                  className={`p-4 rounded-xl text-left border ${dropoffCoords ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Navigation className={dropoffCoords ? 'text-green-500' : 'text-blue-500'} />
+                    <div>
+                      <h4 className="font-bold text-sm text-slate-900 dark:text-white">Dropoff Location</h4>
+                      <p className="text-xs text-gray-500">{dropoffCoords ? 'Location Selected' : 'Tap to select on map'}</p>
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              <button 
+                onClick={requestWinch} 
+                disabled={!pickupCoords || !dropoffCoords}
+                className={`w-full py-4 rounded-xl font-bold mt-4 ${(!pickupCoords || !dropoffCoords) ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-cyber-primary shadow-[0_0_20px_rgba(59,130,246,0.6)] animate-pulse text-white'}`}
+              >
+                Find Winch Drivers
+              </button>
             </div>
           )}
 
           {winchStatus === 'searching' && (
             <div className="flex flex-col items-center py-8">
               <div className="w-16 h-16 border-4 border-cyber-primary border-t-transparent rounded-full animate-spin mb-4"></div>
-              <h3 className="text-xl font-bold animate-pulse text-slate-900 dark:text-white">Looking for online drivers...</h3>
-              <p className="text-gray-500 dark:text-gray-400 text-sm mt-2">Connecting to nearby winch drivers</p>
+              <h3 className="text-xl font-bold animate-pulse text-slate-900 dark:text-white">Locating drivers nearby...</h3>
+              <p className="text-gray-500 dark:text-gray-400 text-sm mt-2">Connecting to drivers within 5km</p>
               <button onClick={() => { setWinchStatus('idle'); winchSocketRef.current?.disconnect(); }} className="mt-6 text-xs text-red-400 underline">Cancel</button>
             </div>
           )}
@@ -1734,14 +2442,18 @@ const App: React.FC = () => {
 
           {winchStatus === 'negotiating' && (
             <div className="space-y-4">
-              <h3 className="font-bold text-cyber-primary dark:text-cyber-accent mb-2">{activeOffers.length} Driver{activeOffers.length !== 1 ? 's' : ''} Available Nearby</h3>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-slate-900 dark:text-white">{activeOffers.length} Driver{activeOffers.length !== 1 ? 's' : ''} Available Nearby</h3>
+                <button onClick={() => setWinchStatus('idle')} className="text-xs text-red-500 underline">Cancel Request</button>
+              </div>
+              
               {activeOffers.map(offer => (
-                <div key={offer.id} className="bg-white/50 dark:bg-gray-800/80 rounded-xl p-4 border border-gray-200 dark:border-gray-700 shadow-sm">
+                <div key={offer.id} className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-200 dark:border-gray-700 shadow-sm">
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <h4 className="font-bold text-slate-900 dark:text-white">{offer.driverName}</h4>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{offer.vehicle} • {offer.rating} ★</p>
-                      <p className="text-xs text-cyber-primary mt-1">ETA: {offer.eta}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{offer.vehicle} • {offer.rating} <Star className="inline w-3 h-3 text-yellow-500 fill-yellow-500" /></p>
+                      <p className="text-xs text-cyber-primary mt-1 font-bold">ETA: {offer.eta}</p>
                     </div>
                     <div className="text-right">
                       <span className={`text-xl font-bold ${offer.status === 'rejected' ? 'text-red-500 line-through' : 'text-slate-900 dark:text-white'}`}>{offer.price} EGP</span>
@@ -1749,26 +2461,31 @@ const App: React.FC = () => {
                   </div>
 
                   {offer.status !== 'accepted' && offer.status !== 'rejected' && (
-                    <div className="flex items-center justify-between mt-4 bg-slate-200 dark:bg-black/40 rounded-lg p-2">
-                      <button onClick={() => adjustOfferPrice(offer.id, -10)} className="p-2 rounded hover:bg-white/10 text-slate-900 dark:text-white" title="Decrease Offer" aria-label="Decrease Offer"><Minus size={16} /></button>
-                      <span className="font-bold text-sm text-slate-900 dark:text-white">Adjust Offer</span>
-                      <button onClick={() => adjustOfferPrice(offer.id, 10)} className="p-2 rounded hover:bg-white/10 text-slate-900 dark:text-white" title="Increase Offer" aria-label="Increase Offer"><Plus size={16} /></button>
+                    <div className="flex items-center justify-between mt-4 bg-slate-50 dark:bg-gray-900 rounded-lg p-2 border border-gray-200 dark:border-gray-700">
+                      <button onClick={() => adjustOfferPrice(offer.id, -20)} className="p-2 rounded bg-white dark:bg-gray-800 shadow text-slate-900 dark:text-white" title="Decrease Offer" aria-label="Decrease Offer"><Minus size={16} /></button>
+                      <div className="text-center">
+                        <span className="font-bold text-sm text-slate-900 dark:text-white block">Offer Price</span>
+                        <span className="text-xs text-gray-500">Tap + / -</span>
+                      </div>
+                      <button onClick={() => adjustOfferPrice(offer.id, 20)} className="p-2 rounded bg-white dark:bg-gray-800 shadow text-slate-900 dark:text-white" title="Increase Offer" aria-label="Increase Offer"><Plus size={16} /></button>
                     </div>
                   )}
 
-                  <div className="flex justify-end gap-2 mt-3">
+                  <div className="flex gap-2 mt-4">
                     {offer.status === 'rejected' ? (
-                      <span className="text-red-500 text-xs font-bold">Offer Rejected</span>
+                      <span className="w-full text-center text-red-500 text-sm font-bold bg-red-50 dark:bg-red-900/20 py-2 rounded-lg">Offer Rejected</span>
                     ) : offer.status === 'accepted' ? (
-                      <button onClick={() => handleAcceptOffer(offer)} className="w-full bg-green-500 text-white px-3 py-2 rounded-lg text-sm font-bold">Accept Deal</button>
+                      <button onClick={() => handleAcceptOffer(offer)} className="w-full bg-green-500 text-white py-3 rounded-lg text-sm font-bold shadow-lg animate-pulse">Proceed to Payment</button>
                     ) : (
                       <>
-                        <button className="bg-red-500/20 text-red-500 p-2 rounded-lg hover:bg-red-500/40" title="Reject Offer" aria-label="Reject Offer"><X size={20} /></button>
-                        <button onClick={() => handleCounterOffer(offer.id)} className="bg-cyber-primary/20 text-cyber-primary dark:text-cyber-accent text-xs px-4 rounded-lg border border-cyber-primary/30 hover:bg-cyber-primary/30 font-bold">
-                          Counter
+                        <button onClick={() => handleRejectOffer(offer.id)} className="flex-1 bg-red-50 text-red-500 dark:bg-red-900/20 dark:text-red-400 py-3 rounded-lg font-bold text-sm hover:bg-red-100 transition-colors">
+                          Reject
                         </button>
-                        <button onClick={() => handleAcceptOffer(offer)} className="bg-green-500 text-white p-2 px-4 rounded-lg hover:bg-green-600 shadow-[0_0_10px_rgba(16,185,129,0.4)]" title="Accept Offer" aria-label="Accept Offer">
-                          <CheckCircle size={20} />
+                        <button onClick={() => handleCounterOffer(offer.id)} className="flex-1 bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 py-3 rounded-lg font-bold text-sm hover:bg-blue-100 transition-colors">
+                          Send Offer
+                        </button>
+                        <button onClick={() => handleAcceptOffer(offer)} className="flex-1 bg-cyber-primary text-white py-3 rounded-lg font-bold text-sm shadow-md hover:bg-blue-600 transition-colors">
+                          Accept
                         </button>
                       </>
                     )}
@@ -1950,15 +2667,11 @@ const App: React.FC = () => {
                   <span className="bg-cyber-primary/20 text-cyber-primary text-xs font-bold px-2 py-1 rounded">NEW REQUEST</span>
                 </div>
                 <h3 className="font-bold text-lg text-slate-900 dark:text-white">{activeWinchRequest.car}</h3>
+                <p className="text-sm text-slate-950 dark:text-gray-200 mb-1 font-semibold">Customer: {activeWinchRequest.customerName || 'Customer'}</p>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 flex items-center gap-1"><MapPin size={14} /> {activeWinchRequest.distance} away • {activeWinchRequest.issue}</p>
 
-                {/* Driver Negotiation Controls */}
                 <div className="bg-slate-100 dark:bg-black/20 p-3 rounded-lg mb-4">
                   <p className="text-sm font-bold text-slate-900 dark:text-white mb-2">Offer: {activeWinchRequest.price} EGP</p>
-                  <div className="flex gap-2">
-                    <button onClick={() => handleWinchDriverNegotiate(activeWinchRequest.price + 50)} className="flex-1 py-2 text-xs bg-cyber-primary/20 text-cyber-primary rounded hover:bg-cyber-primary/30 border border-cyber-primary/30">Counter +50</button>
-                    <button onClick={() => handleWinchDriverNegotiate(activeWinchRequest.price - 20)} className="flex-1 py-2 text-xs bg-red-500/20 text-red-500 rounded hover:bg-red-500/30 border border-red-500/30">Counter -20</button>
-                  </div>
                 </div>
 
                 <div className="flex gap-2">
@@ -2034,6 +2747,30 @@ const App: React.FC = () => {
 
           <div className="flex-1 p-6 space-y-6 overflow-y-auto">
 
+            {/* Live Job Board (Bidding) */}
+            <div>
+              <button 
+                onClick={() => setView(View.BIDDING_WORKSHOP)}
+                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 rounded-xl flex items-center justify-between shadow-lg mb-6 hover:shadow-xl transition group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-white/20 rounded-lg">
+                    <Activity size={24} />
+                  </div>
+                  <div className="text-left">
+                    <h3 className="font-bold">Live Job Board</h3>
+                    <p className="text-xs opacity-80">Bid on nearby repair requests</p>
+                  </div>
+                </div>
+                <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center group-hover:bg-white/30 transition">
+                  <span className="relative flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                  </span>
+                </div>
+              </button>
+            </div>
+
             {/* Live Tracker */}
             <div>
               <h3 className="font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><Activity size={18} className="text-cyber-primary" /> Live Car Tracker</h3>
@@ -2106,26 +2843,37 @@ const App: React.FC = () => {
 
   const renderAIChat = () => (
     <div className="flex flex-col h-screen bg-slate-100 dark:bg-black">
-      <div className="p-4 pt-12 glass-panel shadow-lg z-10 flex items-center gap-4">
-        <button onClick={goBack} className="p-2 rounded-full hover:bg-white/10 text-slate-900 dark:text-white" title="Go Back" aria-label="Go Back"><ArrowLeft /></button>
-        <div>
-          <h2 className="text-xl font-bold font-display text-slate-900 dark:text-white flex items-center gap-2">
-            Auto-Care AI
-            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-          </h2>
-          <p className="text-xs text-green-500">Online • Diagnostics Mode</p>
+      <div className="p-4 pt-12 glass-panel shadow-lg z-10 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <button onClick={goBack} className="p-2 rounded-full hover:bg-white/10 text-slate-900 dark:text-white" title="Go Back" aria-label="Go Back"><ArrowLeft /></button>
+          <div>
+            <h2 className="text-xl font-bold font-display text-slate-900 dark:text-white flex items-center gap-2">
+              Auto-Care AI
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+            </h2>
+            <p className="text-xs text-green-500">Online • Diagnostics Mode</p>
+          </div>
+        </div>
+        <div className="flex bg-slate-200 dark:bg-slate-800 rounded-lg p-1 shadow-inner">
+          <button onClick={() => setChatLanguage('ar')} className={`px-3 py-1 text-sm rounded-md transition-all ${chatLanguage === 'ar' ? 'bg-cyber-primary text-white shadow-md' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700'}`}>عربي</button>
+          <button onClick={() => setChatLanguage('en')} className={`px-3 py-1 text-sm rounded-md transition-all ${chatLanguage === 'en' ? 'bg-cyber-primary text-white shadow-md' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700'}`}>EN</button>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map(msg => (
-          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[80%] p-4 rounded-2xl ${msg.role === 'user'
-              ? 'bg-cyber-primary text-white rounded-br-none'
-              : 'glass-panel text-slate-800 dark:text-gray-200 rounded-bl-none border border-cyber-primary/30'
-              }`}>
-              {msg.text}
+          <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+            <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[80%] p-4 rounded-2xl ${msg.role === 'user'
+                ? 'bg-cyber-primary text-white rounded-br-none'
+                : 'glass-panel text-slate-800 dark:text-gray-200 rounded-bl-none border border-cyber-primary/30'
+                }`}>
+                {msg.text}
+              </div>
             </div>
+            {msg.action === 'WINCH' && (
+               <button onClick={() => requestWinch()} className="mt-2 text-sm bg-red-500 text-white px-4 py-2 rounded-lg shadow-md hover:bg-red-600 transition-colors">Request Emergency Winch</button>
+            )}
           </div>
         ))}
         {isTyping && (
@@ -2146,10 +2894,7 @@ const App: React.FC = () => {
           <Camera size={20} />
         </button>
         <button
-          onMouseDown={toggleRecording}
-          onMouseUp={toggleRecording}
-          onTouchStart={toggleRecording}
-          onTouchEnd={toggleRecording}
+          onClick={toggleRecording}
           className={`p-3 rounded-full transition-all ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'text-cyber-primary hover:bg-cyber-primary/10'}`}
           title="Voice Input"
           aria-label="Voice Input"
@@ -2171,10 +2916,16 @@ const App: React.FC = () => {
   );
 
   const renderWorkshopList = () => {
-    const filteredWorkshops = workshops.filter(w =>
-      w.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
-      (filterCategory === 'All' || w.services?.some(s => s.includes(filterCategory)) || w.specialty.includes(filterCategory))
-    );
+    const filteredWorkshops = workshops.filter(w => {
+      let servicesList: string[] = [];
+      if (Array.isArray(w.services)) {
+        servicesList = w.services;
+      } else if (typeof w.services === 'string') {
+        try { servicesList = JSON.parse(w.services); } catch { servicesList = (w.services as string).split(',').map(s => s.trim()); }
+      }
+      return w.name?.toLowerCase().includes(searchTerm.toLowerCase()) &&
+      (filterCategory === 'All' || servicesList.some(s => s.toLowerCase().includes(filterCategory.toLowerCase())) || w.specialty?.toLowerCase().includes(filterCategory.toLowerCase()))
+    });
 
     return (
       <div className="flex flex-col h-screen bg-slate-100 dark:bg-black relative">
@@ -2234,10 +2985,21 @@ const App: React.FC = () => {
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">{shop.specialty} • {shop.distance}</p>
                 <div className="flex flex-wrap gap-1">
-                  {shop.services?.slice(0, 2).map(s => (
-                    <span key={s} className="text-[10px] bg-slate-200 dark:bg-gray-800 px-2 py-1 rounded text-gray-600 dark:text-gray-300">{s}</span>
-                  ))}
-                  {shop.services && shop.services.length > 2 && <span className="text-[10px] bg-slate-200 dark:bg-gray-800 px-2 py-1 rounded text-gray-600 dark:text-gray-300">+{shop.services.length - 2}</span>}
+                  {(() => {
+                    let sList: string[] = [];
+                    if (Array.isArray(shop.services)) sList = shop.services;
+                    else if (typeof shop.services === 'string') {
+                      try { sList = JSON.parse(shop.services); } catch { sList = (shop.services as string).split(',').map(s => s.trim()); }
+                    }
+                    return (
+                      <>
+                        {sList.slice(0, 2).map((s: string) => (
+                          <span key={s} className="text-[10px] bg-slate-200 dark:bg-gray-800 px-2 py-1 rounded text-gray-600 dark:text-gray-300">{s}</span>
+                        ))}
+                        {sList.length > 2 && <span className="text-[10px] bg-slate-200 dark:bg-gray-800 px-2 py-1 rounded text-gray-600 dark:text-gray-300">+{sList.length - 2}</span>}
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
@@ -2290,9 +3052,16 @@ const App: React.FC = () => {
             <div>
               <h3 className="font-bold text-lg text-slate-900 dark:text-white mb-2">Services</h3>
               <div className="flex flex-wrap gap-2">
-                {selectedWorkshop.services?.map(s => (
-                  <span key={s} className="px-3 py-1 bg-cyber-primary/10 text-cyber-primary border border-cyber-primary/20 rounded-full text-sm">{s}</span>
-                ))}
+                {(() => {
+                  let sList: string[] = [];
+                  if (Array.isArray(selectedWorkshop.services)) sList = selectedWorkshop.services;
+                  else if (typeof selectedWorkshop.services === 'string') {
+                    try { sList = JSON.parse(selectedWorkshop.services); } catch { sList = (selectedWorkshop.services as string).split(',').map(s => s.trim()); }
+                  }
+                  return sList.map((s: string) => (
+                    <span key={s} className="px-3 py-1 bg-cyber-primary/10 text-cyber-primary border border-cyber-primary/20 rounded-full text-sm">{s}</span>
+                  ));
+                })()}
               </div>
             </div>
 
@@ -2305,7 +3074,7 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-slate-100 dark:from-black to-transparent">
+        <div className="absolute bottom-0 left-0 right-0 p-6 z-20 bg-gradient-to-t from-slate-100 dark:from-black to-transparent">
           <button onClick={() => navigate(View.BOOKING)} className="w-full bg-cyber-primary text-white font-bold py-4 rounded-xl shadow-[0_0_20px_rgba(59,130,246,0.6)] hover:scale-[1.02] transition-transform">
             Book Appointment
           </button>
@@ -2331,6 +3100,12 @@ const App: React.FC = () => {
   );
 
   const [editingVehicle, setEditingVehicle] = React.useState(false);
+  const [editingProfile, setEditingProfile] = React.useState(false);
+  const [profileName, setProfileName] = React.useState(user.name);
+  const [profileEmail, setProfileEmail] = React.useState(user.email);
+  const [profilePhone, setProfilePhone] = React.useState(user.phone || '');
+  const [profileGender, setProfileGender] = React.useState(user.gender || '');
+  const [profileDob, setProfileDob] = React.useState(user.dob || '');
   const [vehicleBrand, setVehicleBrand] = React.useState(user.carBrand || '');
   const [vehicleModel, setVehicleModel] = React.useState(user.carModel || '');
   const [vehicleLicense, setVehicleLicense] = React.useState('ABC 123');
@@ -2344,33 +3119,116 @@ const App: React.FC = () => {
       </div>
 
       <div className="px-6 pb-6 overflow-y-auto no-scrollbar">
-        <div className="flex items-center gap-4 mb-8">
+        <div className="flex items-center gap-4 mb-4">
           <div className="w-20 h-20 rounded-full bg-gray-700 border-2 border-cyber-primary overflow-hidden">
             <img src="https://picsum.photos/100/100" alt="Profile" title="Profile" />
           </div>
-          <div>
-            <h3 className="text-xl font-bold text-slate-900 dark:text-white">{user.name || 'User'}</h3>
-            <p className="text-gray-500 text-sm">{user.email || 'user@example.com'}</p>
-            <span className="text-xs bg-cyber-primary/20 text-cyber-primary px-2 py-0.5 rounded mt-1 inline-block">Free Member</span>
+          <div className="flex-1">
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white">{user.name || 'User'}</h3>
+                <p className="text-gray-500 text-sm">{user.email || 'user@example.com'}</p>
+                <span className="text-xs bg-cyber-primary/20 text-cyber-primary px-2 py-0.5 rounded mt-1 inline-block">Free Member</span>
+              </div>
+              <button className="text-xs text-cyber-primary" onClick={() => setEditingProfile(v => !v)}>
+                {editingProfile ? 'Cancel' : 'Edit Profile'}
+              </button>
+            </div>
           </div>
         </div>
 
+        {editingProfile && (
+          <div className="glass-panel p-4 rounded-xl mb-6 space-y-3">
+            <input
+              className="w-full bg-slate-100 dark:bg-gray-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white border border-gray-600 focus:outline-none focus:border-cyber-primary"
+              placeholder="Name"
+              value={profileName}
+              onChange={e => setProfileName(e.target.value)}
+            />
+            <input
+              className="w-full bg-slate-100 dark:bg-gray-800 rounded-lg px-3 py-2 text-sm text-slate-500 border border-gray-600 focus:outline-none cursor-not-allowed"
+              placeholder="Email"
+              value={profileEmail}
+              disabled
+            />
+            <input
+              aria-label="Phone Number"
+              className="w-full bg-slate-100 dark:bg-gray-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white border border-gray-600 focus:outline-none focus:border-cyber-primary"
+              placeholder="Phone"
+              value={profilePhone}
+              onChange={e => setProfilePhone(e.target.value)}
+            />
+            <select
+              aria-label="Gender"
+              title="Gender"
+              className="w-full bg-slate-100 dark:bg-gray-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white border border-gray-600 focus:outline-none focus:border-cyber-primary"
+              value={profileGender}
+              onChange={e => setProfileGender(e.target.value)}
+            >
+              <option value="">Select Gender</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+            </select>
+            <input
+              aria-label="Date of Birth"
+              className="w-full bg-slate-100 dark:bg-gray-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white border border-gray-600 focus:outline-none focus:border-cyber-primary"
+              type="date"
+              placeholder="Date of Birth"
+              value={profileDob}
+              onChange={e => setProfileDob(e.target.value)}
+            />
+            <button
+              className="w-full bg-cyber-primary text-white text-sm font-bold py-2 rounded-lg"
+              onClick={async () => {
+                const tokenVal = localStorage.getItem('token');
+                if (!tokenVal) return;
+                try {
+                  const res = await fetch(`${API_URL}/api/auth/me`, {
+                    method: 'PATCH',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${tokenVal}`
+                    },
+                    body: JSON.stringify({
+                      name: profileName,
+                      phone: profilePhone,
+                      gender: profileGender,
+                      dob: profileDob
+                    })
+                  });
+                  if (res.ok) {
+                    const updatedUser = await res.json();
+                    setUser(prev => ({ ...prev, ...updatedUser }));
+                    authContext.login(tokenVal, updatedUser); // sync context
+                    setEditingProfile(false);
+                  }
+                } catch (err) {
+                  console.error('Failed to update profile', err);
+                }
+              }}
+            >
+              Save Profile
+            </button>
+          </div>
+        )}
+
         <div className="glass-panel p-4 rounded-xl mb-6">
           <div className="flex justify-between items-center mb-4">
-            <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-2"><Car size={18} /> My Vehicle</h4>
+            <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-2"><Car size={18} /> {user?.role === UserRole.WINCH_DRIVER ? 'My Winch' : 'My Vehicle'}</h4>
             <button className="text-xs text-cyber-primary" onClick={() => setEditingVehicle(v => !v)}>{editingVehicle ? 'Cancel' : 'Edit'}</button>
           </div>
           {editingVehicle ? (
             <div className="space-y-3">
               <input
                 className="w-full bg-slate-100 dark:bg-gray-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white border border-gray-600 focus:outline-none focus:border-cyber-primary"
-                placeholder="Car Brand (e.g. Toyota)"
+                placeholder={user?.role === UserRole.WINCH_DRIVER ? 'Winch Brand (e.g. Mercedes)' : 'Car Brand (e.g. Toyota)'}
                 value={vehicleBrand}
                 onChange={e => setVehicleBrand(e.target.value)}
               />
               <input
                 className="w-full bg-slate-100 dark:bg-gray-800 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white border border-gray-600 focus:outline-none focus:border-cyber-primary"
-                placeholder="Car Model (e.g. Corolla)"
+                placeholder={user?.role === UserRole.WINCH_DRIVER ? 'Winch Type (e.g. Flatbed)' : 'Car Model (e.g. Corolla)'}
                 value={vehicleModel}
                 onChange={e => setVehicleModel(e.target.value)}
               />
@@ -2601,9 +3459,17 @@ const App: React.FC = () => {
                 <div className="glass-panel p-4 rounded-2xl border-l-4 border-purple-500">
                   <div className="text-purple-500 mb-2"><User size={20} /></div>
                   <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Platform Users</p>
-                  <p className="text-xl font-bold mt-1 text-slate-900 dark:text-white">
-                    {adminStats ? Number(Object.values(adminStats.users).reduce((a: any, b: any) => a + b, 0)) : 0}
-                  </p>
+                  <div className="flex items-center gap-3 mt-1">
+                    <p className="text-xl font-bold text-slate-900 dark:text-white">
+                      {adminStats ? Number(Object.values(adminStats.users).reduce((a: any, b: any) => a + b, 0)) : 0}
+                    </p>
+                    {adminStats?.onlineUsersCount !== undefined && (
+                      <p className="text-xs font-bold text-green-500 flex items-center gap-1 bg-green-500/10 px-2 py-0.5 rounded-full">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                        {adminStats.onlineUsersCount} Live
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="glass-panel p-4 rounded-2xl border-l-4 border-cyan-500">
@@ -2627,7 +3493,14 @@ const App: React.FC = () => {
                     <span className="font-bold text-slate-900 dark:text-white">{adminStats?.workshops || 0}</span>
                   </div>
                   <div className="w-full bg-slate-200 dark:bg-gray-800 h-1.5 rounded-full overflow-hidden">
-                    <div className="bg-cyber-primary h-full rounded-full" style={{ width: `${(adminStats?.workshops || 0) * 10}%` }}></div>
+                    <div className={`bg-cyber-primary h-full rounded-full ${
+                      (adminStats?.workshops || 0) * 10 >= 100 ? 'w-full' :
+                      (adminStats?.workshops || 0) * 10 >= 80 ? 'w-4/5' :
+                      (adminStats?.workshops || 0) * 10 >= 60 ? 'w-3/5' :
+                      (adminStats?.workshops || 0) * 10 >= 40 ? 'w-2/5' :
+                      (adminStats?.workshops || 0) * 10 >= 20 ? 'w-1/5' :
+                      (adminStats?.workshops || 0) * 10 > 0 ? 'w-[10%]' : 'w-0'
+                    }`}></div>
                   </div>
 
                   <div className="flex justify-between items-center">
@@ -2637,7 +3510,14 @@ const App: React.FC = () => {
                     <span className="font-bold text-slate-900 dark:text-white">{adminStats?.users.WINCH_DRIVER || 0}</span>
                   </div>
                   <div className="w-full bg-slate-200 dark:bg-gray-800 h-1.5 rounded-full overflow-hidden">
-                    <div className="bg-cyan-500 h-full rounded-full" style={{ width: `${(adminStats?.users.WINCH_DRIVER || 0) * 10}%` }}></div>
+                    <div className={`bg-cyan-500 h-full rounded-full ${
+                      (adminStats?.users.WINCH_DRIVER || 0) * 10 >= 100 ? 'w-full' :
+                      (adminStats?.users.WINCH_DRIVER || 0) * 10 >= 80 ? 'w-4/5' :
+                      (adminStats?.users.WINCH_DRIVER || 0) * 10 >= 60 ? 'w-3/5' :
+                      (adminStats?.users.WINCH_DRIVER || 0) * 10 >= 40 ? 'w-2/5' :
+                      (adminStats?.users.WINCH_DRIVER || 0) * 10 >= 20 ? 'w-1/5' :
+                      (adminStats?.users.WINCH_DRIVER || 0) * 10 > 0 ? 'w-[10%]' : 'w-0'
+                    }`}></div>
                   </div>
 
                   <div className="flex justify-between items-center">
@@ -2647,7 +3527,14 @@ const App: React.FC = () => {
                     <span className="font-bold text-slate-900 dark:text-white">{adminStats?.activeAppointments || 0}</span>
                   </div>
                   <div className="w-full bg-slate-200 dark:bg-gray-800 h-1.5 rounded-full overflow-hidden">
-                    <div className="bg-purple-500 h-full rounded-full" style={{ width: `${(adminStats?.activeAppointments || 0) * 10}%` }}></div>
+                    <div className={`bg-purple-500 h-full rounded-full ${
+                      (adminStats?.activeAppointments || 0) * 10 >= 100 ? 'w-full' :
+                      (adminStats?.activeAppointments || 0) * 10 >= 80 ? 'w-4/5' :
+                      (adminStats?.activeAppointments || 0) * 10 >= 60 ? 'w-3/5' :
+                      (adminStats?.activeAppointments || 0) * 10 >= 40 ? 'w-2/5' :
+                      (adminStats?.activeAppointments || 0) * 10 >= 20 ? 'w-1/5' :
+                      (adminStats?.activeAppointments || 0) * 10 > 0 ? 'w-[10%]' : 'w-0'
+                    }`}></div>
                   </div>
                 </div>
               </div>
@@ -2759,8 +3646,19 @@ const App: React.FC = () => {
                 {filteredUsers.length > 0 ? filteredUsers.map((u, idx) => (
                   <div key={u.id || idx} className="glass-panel p-4 rounded-xl flex items-center justify-between">
                     <div>
-                      <h4 className="font-bold text-sm text-slate-900 dark:text-white">{u.name || 'No Name'}</h4>
-                      <p className="text-xs text-gray-500">{u.email}</p>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-sm text-slate-900 dark:text-white">{u.name || 'No Name'}</h4>
+                        {u.isOnline ? (
+                          <span className="flex items-center gap-1 text-[10px] font-bold text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded-full border border-green-500/20">
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span> Online
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 text-[10px] font-bold text-gray-500 bg-gray-500/10 px-1.5 py-0.5 rounded-full">
+                            <span className="w-1.5 h-1.5 rounded-full bg-gray-400"></span> Offline
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">{u.email}</p>
                       <p className="text-[10px] text-gray-400 mt-1">Joined: {new Date(u.createdAt).toLocaleDateString()}</p>
                     </div>
                     <div className="text-right">
@@ -2822,10 +3720,13 @@ const App: React.FC = () => {
         {view === View.PROFILE && renderProfile()}
         {view === View.SETTINGS && renderSettings()}
         {view === View.SPARE_PARTS && renderSpareParts()}
-        {view === View.WINCH_LIVE_MAP && liveBookingId && <WinchLiveUser bookingId={liveBookingId} onBack={() => setView(View.HOME)} />}
+        {view === View.WINCH_LIVE_MAP && liveBookingId && <WinchLiveUser bookingId={liveBookingId} onBack={() => setView(user.role === UserRole.WINCH_DRIVER ? View.WINCH_DASHBOARD : View.HOME)} />}
         {/* Admin: only render if user has ADMIN role */}
         {view === View.ADMIN_DASHBOARD && (authUser?.role === 'ADMIN' || user.role === UserRole.ADMIN) && renderAdminDashboard()}
         {view === View.ADMIN_DASHBOARD && authUser?.role !== 'ADMIN' && user.role !== UserRole.ADMIN && renderHome()}
+        
+        {view === View.BIDDING_USER && <BiddingUser onBack={() => setView(View.HOME)} />}
+        {view === View.BIDDING_WORKSHOP && <BiddingWorkshop onBack={() => setView(View.WORKSHOP_DASHBOARD)} />}
       </div>
     </div>
   );

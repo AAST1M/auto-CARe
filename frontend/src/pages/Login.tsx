@@ -1,13 +1,38 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Eye, EyeOff, AlertCircle, Loader } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, Moon, Sun, RefreshCw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
 import { validateEmail, validatePassword } from '../utils/validators';
 import { API_URL } from '../config';
 
 export const Login = () => {
-  const { login } = useAuth();
+  const { login, user } = useAuth();
   const navigate = useNavigate();
+  
+  React.useEffect(() => {
+    if (user) {
+      navigate('/');
+    }
+  }, [user, navigate]);
+
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  
+  React.useEffect(() => {
+    if (document.documentElement.classList.contains('dark')) {
+      setIsDarkMode(true);
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    if (isDarkMode) {
+      document.documentElement.classList.remove('dark');
+      setIsDarkMode(false);
+    } else {
+      document.documentElement.classList.add('dark');
+      setIsDarkMode(true);
+    }
+  };
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -64,18 +89,21 @@ export const Login = () => {
   };
 
   return (
-    <div className="flex flex-col min-h-screen p-6 pt-20 bg-slate-50 dark:bg-black">
-      <Link to="/" className="absolute top-6 left-6 p-2 rounded-full bg-white/10 dark:bg-white/5 backdrop-blur border border-white/20 text-slate-700 dark:text-white hover:bg-white/20 transition-colors">
+    <div className="min-h-screen bg-slate-50 dark:bg-black font-sans flex items-center justify-center p-4 relative">
+      <Link to="/" className="absolute top-6 left-6 p-2 rounded-full glass-panel text-slate-900 dark:text-white hover:bg-white/20 transition-colors">
         <ArrowLeft size={20} />
       </Link>
+      <button onClick={toggleTheme} className="absolute top-6 right-6 p-2 rounded-full glass-panel text-slate-900 dark:text-white hover:bg-white/20 transition-colors">
+        {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+      </button>
 
-      <h2 className="text-3xl font-bold mb-2 text-slate-900 dark:text-white">Welcome Back</h2>
-      <p className="text-gray-500 dark:text-gray-400 mb-10">Sign in to your dashboard.</p>
+      <div className="w-full max-w-md p-8">
+        <h2 className="text-3xl font-display font-bold mb-2 text-slate-900 dark:text-white">Welcome Back</h2>
+        <p className="text-gray-500 dark:text-gray-400 mb-8">Sign in to your dashboard.</p>
 
-      {/* General Error Banner */}
       {errors.general && (
         <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 text-red-500 rounded-xl px-4 py-3 mb-4 text-sm">
-          <AlertCircle size={16} className="shrink-0" />
+          <AlertTriangle size={16} className="shrink-0" />
           <span>{errors.general}</span>
         </div>
       )}
@@ -83,7 +111,7 @@ export const Login = () => {
       <div className="space-y-4">
         {/* Email */}
         <div>
-          <div className={`rounded-xl p-1 border transition-colors ${touched.email && errors.email ? 'border-red-500 bg-red-500/5' : 'bg-white/10 dark:bg-white/5 backdrop-blur border-white/20'}`}>
+          <div className={`rounded-xl p-1 border transition-colors ${touched.email && errors.email ? 'border-red-500 bg-red-500/5 glass-panel' : 'glass-panel'}`}>
             <input
               id="login-email"
               type="email"
@@ -97,14 +125,14 @@ export const Login = () => {
           </div>
           {touched.email && errors.email && (
             <p className="text-red-500 text-xs mt-1 ml-2 flex items-center gap-1">
-              <AlertCircle size={12} /> {errors.email}
+              <AlertTriangle size={12} /> {errors.email}
             </p>
           )}
         </div>
 
         {/* Password */}
         <div>
-          <div className={`rounded-xl p-1 border transition-colors flex items-center ${touched.password && errors.password ? 'border-red-500 bg-red-500/5' : 'bg-white/10 dark:bg-white/5 backdrop-blur border-white/20'}`}>
+          <div className={`rounded-xl p-1 border transition-colors flex items-center ${touched.password && errors.password ? 'border-red-500 bg-red-500/5 glass-panel' : 'glass-panel'}`}>
             <input
               id="login-password"
               type={showPassword ? 'text' : 'password'}
@@ -114,20 +142,25 @@ export const Login = () => {
               onBlur={() => handleBlur('password')}
               className="flex-1 bg-transparent p-4 outline-none text-slate-900 dark:text-white placeholder-gray-500"
               autoComplete="current-password"
+              onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
             />
-            <button type="button" onClick={() => setShowPassword(!showPassword)} className="pr-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors">
-              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            <button type="button" onClick={() => setShowPassword(!showPassword)} className="pr-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200" aria-label={showPassword ? 'Hide password' : 'Show password'}>
+              {showPassword ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
             </button>
           </div>
           {touched.password && errors.password && (
             <p className="text-red-500 text-xs mt-1 ml-2 flex items-center gap-1">
-              <AlertCircle size={12} /> {errors.password}
+              <AlertTriangle size={12} /> {errors.password}
             </p>
           )}
         </div>
 
         <div className="flex justify-end">
-          <button type="button" className="text-sm text-blue-500 hover:text-blue-400 transition-colors">
+          <button 
+            type="button" 
+            onClick={() => navigate('/forgot-password')} 
+            className="text-sm text-cyber-primary"
+          >
             Forgot Password?
           </button>
         </div>
@@ -136,16 +169,16 @@ export const Login = () => {
           id="login-submit"
           onClick={handleLogin}
           disabled={loading}
-          className="w-full mt-6 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-bold py-4 rounded-xl shadow-lg hover:from-blue-500 hover:to-blue-600 transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          className="w-full mt-6 bg-gradient-to-r from-cyber-primary to-blue-700 text-white font-bold py-4 rounded-xl shadow-lg disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
-          {loading ? <><Loader size={18} className="animate-spin" /> Signing in...</> : 'Sign In'}
+          {loading ? <><RefreshCw size={18} className="animate-spin" /> Signing in...</> : 'Sign In'}
         </button>
 
         <p className="mt-6 text-center text-gray-500 dark:text-gray-400">
-          Don't have an account?{' '}
-          <Link to="/signup" className="text-blue-500 font-bold hover:text-blue-400 transition-colors">Sign Up</Link>
+          Don't have an account? <Link to="/signup" className="text-cyber-primary font-bold">Sign Up</Link>
         </p>
       </div>
     </div>
+  </div>
   );
 };

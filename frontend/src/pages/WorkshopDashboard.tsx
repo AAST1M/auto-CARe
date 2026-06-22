@@ -156,8 +156,19 @@ export const WorkshopDashboard = () => {
                                    <span className="text-xs text-gray-500">{car.plate}</span>
                                </div>
                                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-2">
-                                {/* eslint-disable-next-line */}
-                                   <div className="bg-cyber-primary h-2 rounded-full transition-all duration-500" style={{width: `${car.progress}%`}}></div>
+                                {/* eslint-disable-next-line react/forbid-dom-props */}
+                                   <div className={`bg-cyber-primary h-2 rounded-full transition-all duration-500 ${
+                                     car.progress >= 100 ? 'w-full' :
+                                     car.progress >= 90 ? 'w-[90%]' :
+                                     car.progress >= 80 ? 'w-[80%]' :
+                                     car.progress >= 70 ? 'w-[70%]' :
+                                     car.progress >= 60 ? 'w-[60%]' :
+                                     car.progress >= 50 ? 'w-[50%]' :
+                                     car.progress >= 40 ? 'w-[40%]' :
+                                     car.progress >= 30 ? 'w-[30%]' :
+                                     car.progress >= 20 ? 'w-[20%]' :
+                                     car.progress >= 10 ? 'w-[10%]' : 'w-0'
+                                   }`}></div>
                                </div>
                                <div className="flex justify-between items-center">
                                    <span className="text-xs font-bold text-cyber-primary">{car.status}</span>

@@ -8,6 +8,8 @@ import LoginScreen from './src/screens/LoginScreen';
 import SignUpScreen from './src/screens/SignUpScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import WinchMapScreen from './src/screens/WinchMapScreen';
+import AIDiagnosticsScreen from './src/screens/AIDiagnosticsScreen';
+import FindWorkshopScreen from './src/screens/FindWorkshopScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -29,6 +31,8 @@ function RootNavigator() {
         <>
           <Stack.Screen name="Home" component={HomeScreen} />
           <Stack.Screen name="WinchMap" component={WinchMapScreen} options={{ headerShown: true, title: 'Request Winch' }} />
+          <Stack.Screen name="AIDiagnostics" component={AIDiagnosticsScreen} options={{ headerShown: true, title: 'AI Diagnostics' }} />
+          <Stack.Screen name="FindWorkshop" component={FindWorkshopScreen} options={{ headerShown: true, title: 'Find Workshop' }} />
         </>
       )}
     </Stack.Navigator>

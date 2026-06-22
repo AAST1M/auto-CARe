@@ -1,14 +1,59 @@
 import { Server, Socket } from 'socket.io';
 import prisma from './prismaClient';
+import { getAdminStats, getAdminTransactions, getAdminUsers } from './services/adminService';
 
 // Track online drivers: socketId -> driver info
 const onlineDrivers = new Map<string, any>();
 // Track socketId by userId
 const userSockets = new Map<string, string>();
 
+export function getOnlineUserIds(): string[] {
+  return Array.from(userSockets.keys());
+}
+
+export function getOnlineUsersCount(): number {
+  return new Set(userSockets.keys()).size;
+}
+// Haversine formula to calculate distance in km
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371; // Earth radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
 export function setupSocket(io: Server) {
+  // Setup real-time background broadcaster for admin dashboard
+  setInterval(async () => {
+    try {
+      const adminRoom = io.sockets.adapter.rooms.get('admin_room');
+      if (adminRoom && adminRoom.size > 0) {
+        const stats = await getAdminStats();
+        const transactions = await getAdminTransactions();
+        const users = await getAdminUsers();
+        io.to('admin_room').emit('admin_dashboard_update', { stats, transactions, users });
+      }
+    } catch (err) {
+      console.error('Error broadcasting admin stats:', err);
+    }
+  }, 5000);
+
   io.on('connection', (socket: Socket) => {
     console.log('⚡ Client connected:', socket.id);
+
+    // Join Admin Room
+    socket.on('join_admin_room', () => {
+      socket.join('admin_room');
+      console.log(`🛡️ Admin joined dashboard room: ${socket.id}`);
+    });
+
+    socket.on('leave_admin_room', () => {
+      socket.leave('admin_room');
+    });
 
     // Register user's socket
     socket.on('register_user', (userId: string) => {
@@ -16,7 +61,7 @@ export function setupSocket(io: Server) {
     });
 
     // ── Driver goes ONLINE ────────────────────────────────────────────────────
-    socket.on('driver_online', (data: { driverId: string; driverName: string; vehicle: string; price: number }) => {
+    socket.on('driver_online', (data: { driverId: string; driverName: string; vehicle: string; price: number, lat?: number, lng?: number }) => {
       onlineDrivers.set(socket.id, { ...data, socketId: socket.id });
       io.emit('drivers_updated', Array.from(onlineDrivers.values()));
       console.log(`✅ Driver ${data.driverName} is ONLINE`);
@@ -41,9 +86,18 @@ export function setupSocket(io: Server) {
       car: string;
       issue: string;
       price: number;
+      lat?: number;
+      lng?: number;
     }) => {
       const driverSocket = io.sockets.sockets.get(data.driverSocketId);
       if (driverSocket) {
+        const driverData = onlineDrivers.get(data.driverSocketId);
+        let distanceStr = 'Nearby';
+        if (data.lat && data.lng && driverData?.lat && driverData?.lng) {
+          const distKm = calculateDistance(data.lat, data.lng, driverData.lat, driverData.lng);
+          distanceStr = `${distKm.toFixed(1)} km`;
+        }
+
         driverSocket.emit('new_request', {
           customerId: data.customerId,
           customerName: data.customerName,
@@ -51,7 +105,7 @@ export function setupSocket(io: Server) {
           car: data.car,
           issue: data.issue,
           price: data.price,
-          distance: '2.4 km',
+          distance: distanceStr,
         });
         console.log(`📞 Customer ${data.customerName} requested driver ${data.driverSocketId}`);
       } else {
@@ -113,6 +167,14 @@ export function setupSocket(io: Server) {
       }
     });
 
+    // ── Driver COUNTERS ────────────────────────────────────────────────────────
+    socket.on('driver_counter_offer', (data: { customerSocketId: string, driverId: string, price: number }) => {
+      const customerSocket = io.sockets.sockets.get(data.customerSocketId);
+      if (customerSocket) {
+        customerSocket.emit('driver_countered', { driverId: data.driverId, price: data.price });
+      }
+    });
+
     // ── Join booking room ──────────────────────────────────────────────────────
     socket.on('join_winch_room', (bookingId: string) => {
       socket.join(`winch_${bookingId}`);
@@ -127,8 +189,6 @@ export function setupSocket(io: Server) {
       userLng?: number;
       status?: string;
     }) => {
-      io.to(`winch_${data.bookingId}`).emit('location_updated', data);
-
       try {
         const updateData: any = {};
         if (data.driverLat) updateData.driverLat = data.driverLat;
@@ -136,12 +196,113 @@ export function setupSocket(io: Server) {
         if (data.userLat) updateData.userLat = data.userLat;
         if (data.userLng) updateData.userLng = data.userLng;
 
+        let distanceStr = '';
+        let etaStr = '';
+
         if (Object.keys(updateData).length > 0) {
-          await prisma.winchBooking.update({ where: { id: data.bookingId }, data: updateData });
+          const updatedBooking = await prisma.winchBooking.update({
+            where: { id: data.bookingId },
+            data: updateData
+          });
+
+          // Calculate ETA if both coordinates exist
+          if (updatedBooking.userLat && updatedBooking.userLng && updatedBooking.driverLat && updatedBooking.driverLng) {
+            const distKm = calculateDistance(
+              updatedBooking.userLat, updatedBooking.userLng,
+              updatedBooking.driverLat, updatedBooking.driverLng
+            );
+            
+            // Assume 30 km/h average city speed
+            const timeHours = distKm / 30;
+            const timeMins = Math.ceil(timeHours * 60);
+            
+            distanceStr = distKm < 1 ? `${(distKm * 1000).toFixed(0)} m` : `${distKm.toFixed(1)} km`;
+            etaStr = `${timeMins} min`;
+            
+            // If less than 100 meters, driver has arrived
+            if (distKm < 0.1) {
+               data.status = 'Driver Arrived';
+            }
+          }
         }
+
+        // Emit updated data with ETA
+        io.to(`winch_${data.bookingId}`).emit('location_updated', {
+          ...data,
+          distance: distanceStr || undefined,
+          eta: etaStr || undefined
+        });
+
       } catch (err) {
         console.error('Location update error:', err);
       }
+    });
+
+    // ── Driver COMPLETES booking ───────────────────────────────────────────────
+    socket.on('complete_booking', async (data: { bookingId: string }) => {
+      try {
+        const booking = await prisma.winchBooking.findUnique({ where: { id: data.bookingId } });
+        if (!booking) return;
+
+        await prisma.$transaction(async (tx) => {
+          // Update booking status
+          await tx.winchBooking.update({
+            where: { id: data.bookingId },
+            data: { status: 'Completed' }
+          });
+
+          const commission = booking.price * 0.10; // 10% platform fee
+          const driverEarning = booking.price - commission;
+
+          // Deduct from User wallet
+          await tx.user.update({
+            where: { id: booking.userId },
+            data: { walletBalance: { decrement: booking.price } }
+          });
+
+          // Add to Driver wallet
+          await tx.user.update({
+            where: { id: booking.driverId },
+            data: { walletBalance: { increment: driverEarning } }
+          });
+
+          // Create Transaction record
+          await tx.transaction.create({
+            data: {
+              userId: booking.userId,
+              providerId: booking.driverId,
+              amount: booking.price,
+              commission: commission,
+              type: 'Winch Ride',
+              status: 'Completed'
+            }
+          });
+        });
+
+        io.to(`winch_${data.bookingId}`).emit('booking_completed', { bookingId: data.bookingId });
+        console.log(`✅ Booking ${data.bookingId} completed. Balances updated.`);
+      } catch (err) {
+        console.error('Complete booking error:', err);
+      }
+    });
+
+    // ── MECHANIC BIDDING SYSTEM ────────────────────────────────────────────────
+    socket.on('new_repair_request', (data: any) => {
+      // Broadcast to all online workshops (or all users for simplicity here)
+      io.emit('broadcast_repair_request', data);
+      console.log('📢 New repair request broadcasted:', data);
+    });
+
+    socket.on('new_repair_bid', (data: any) => {
+      // Broadcast the bid to the specific user who made the request
+      io.emit(`new_bid_${data.repairRequestId}`, data);
+      console.log('💰 New bid received for request:', data.repairRequestId);
+    });
+
+    socket.on('bid_accepted', (data: any) => {
+      // Broadcast that a bid was accepted
+      io.emit(`bid_accepted_${data.repairRequestId}`, data);
+      console.log('✅ Bid accepted for request:', data.repairRequestId);
     });
 
     socket.on('disconnect', () => {

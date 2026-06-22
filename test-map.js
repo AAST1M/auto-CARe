@@ -22,18 +22,17 @@ const { chromium } = require('playwright');
     await driverPage.goto('http://localhost:3000/login');
     
     // Switch to sign up
-    await driverPage.click('text="Create an account"');
+    await driverPage.click('text="Sign Up"');
     
     // Fill out sign up form
     const driverEmail = `driver_${Date.now()}@test.com`;
-    await driverPage.fill('input[placeholder="John Doe"]', 'Test Driver');
+    await driverPage.fill('input[placeholder="Full Name"]', 'Test Driver');
     await driverPage.fill('input[type="email"]', driverEmail);
-    await driverPage.fill('input[type="password"]', 'password123');
+    await driverPage.fill('input[placeholder="Password (min 8 chars, 1 uppercase, 1 number)"]', 'Password123');
     await driverPage.click('button:has-text("Create Account")');
     
     // Select Winch Driver Role
-    await driverPage.waitForSelector('text="Winch Driver"');
-    await driverPage.click('text="Winch Driver"');
+    await driverPage.selectOption('select', 'WINCH_DRIVER');
     
     // Fill out Winch Onboarding
     await driverPage.fill('input[placeholder="e.g. ABC 1234"]', 'ABC 1234');
@@ -54,12 +53,12 @@ const { chromium } = require('playwright');
     // 2. User signs up
     console.log('User: Navigating to login...');
     await userPage.goto('http://localhost:3000/login');
-    await userPage.click('text="Create an account"');
+    await userPage.click('text="Sign Up"');
     
     const userEmail = `user_${Date.now()}@test.com`;
-    await userPage.fill('input[placeholder="John Doe"]', 'Test User');
+    await userPage.fill('input[placeholder="Full Name"]', 'Test User');
     await userPage.fill('input[type="email"]', userEmail);
-    await userPage.fill('input[type="password"]', 'password123');
+    await userPage.fill('input[placeholder="Password (min 8 chars, 1 uppercase, 1 number)"]', 'Password123');
     await userPage.click('button:has-text("Create Account")');
     
     // Select Normal User Role

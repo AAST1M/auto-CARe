@@ -1,15 +1,22 @@
 import { Router } from 'express';
 import prisma from '../prismaClient';
 import { authenticateToken, requireRole, AuthRequest } from '../middleware/auth';
+import { getCache, setCache, clearCache } from '../redisClient';
 
 const router = Router();
 
-// Get all workshops
+// Get all workshops (Cached)
 router.get('/', async (req, res) => {
   try {
+    const cacheKey = 'workshops:all';
+    const cached = await getCache(cacheKey);
+    if (cached) return res.json(cached);
+
     const workshops = await prisma.workshop.findMany({
       include: { owner: { select: { name: true } } }
     });
+
+    await setCache(cacheKey, workshops, 3600); // cache for 1 hour
     res.json(workshops);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -46,6 +53,7 @@ router.post('/', authenticateToken, requireRole('WORKSHOP_OWNER'), async (req: A
         ownerId: req.user!.id
       }
     });
+    await clearCache('workshops:all');
     res.json(workshop);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -56,7 +64,7 @@ router.post('/', authenticateToken, requireRole('WORKSHOP_OWNER'), async (req: A
 router.post('/:id/book', authenticateToken, async (req: AuthRequest, res) => {
   try {
     const { id } = req.params;
-    const { serviceType, time, carDetails, price } = req.body;
+    const { serviceType, time, carDetails, price, paymentMethod } = req.body;
 
     // Validation
     if (!serviceType || !serviceType.trim()) {
@@ -88,28 +96,30 @@ router.post('/:id/book', authenticateToken, async (req: AuthRequest, res) => {
       if (!workshop) return res.status(404).json({ error: 'Workshop not found' });
     }
 
-    // Check user balance
+    // Check user balance only if paying with card
     const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
-    if (!user || user.walletBalance < parsedPrice) {
-      return res.status(402).json({ error: 'Insufficient funds. Please top up your wallet.' });
+    if (paymentMethod !== 'cash') {
+      if (!user || user.walletBalance < parsedPrice) {
+        return res.status(402).json({ error: 'Insufficient funds in digital wallet. Please choose Cash on Delivery or top up your wallet.' });
+      }
+
+      // Process Transaction (Deduct from user, give 90% to workshop owner)
+      await prisma.$transaction(async (tx) => {
+        // Deduct full amount
+        await tx.user.update({
+          where: { id: user!.id },
+          data: { walletBalance: { decrement: parsedPrice } }
+        });
+
+        // Add 90% to workshop owner
+        await tx.user.update({
+          where: { id: workshop!.ownerId },
+          data: { walletBalance: { increment: parsedPrice * 0.9 } }
+        });
+
+        // Platform keeps 10%
+      });
     }
-
-    // Process Transaction (Deduct from user, give 90% to workshop owner)
-    await prisma.$transaction(async (tx) => {
-      // Deduct full amount
-      await tx.user.update({
-        where: { id: user.id },
-        data: { walletBalance: { decrement: parsedPrice } }
-      });
-
-      // Add 90% to workshop owner
-      await tx.user.update({
-        where: { id: workshop!.ownerId },
-        data: { walletBalance: { increment: parsedPrice * 0.9 } }
-      });
-
-      // Platform keeps 10% (can be tracked implicitly by wallet total differences)
-    });
 
     const appointment = await prisma.appointment.create({
       data: {

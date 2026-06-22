@@ -20,11 +20,19 @@ model User {
   dob            String?
   role           String        @default("USER") // USER, WINCH_DRIVER, WORKSHOP_OWNER
   walletBalance  Float         @default(0)
+  resetToken     String?
+  resetTokenExpiry DateTime?
+  refreshToken   String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
   workshops      Workshop[]    @relation("OwnerWorkshops")
   appointments   Appointment[] @relation("UserAppointments")
+  partOrders     PartOrder[]
+  chats          ChatHistory[]
+  transactionsAsUser Transaction[] @relation("UserTransactions")
+  transactionsAsProvider Transaction[] @relation("ProviderTransactions")
+  repairRequests RepairRequest[]
 }
 
 model Workshop {
@@ -45,6 +53,8 @@ model Workshop {
 
   owner         User          @relation("OwnerWorkshops", fields: [ownerId], references: [id])
   appointments  Appointment[] @relation("WorkshopAppointments")
+  spareParts    SparePart[]
+  repairBids    RepairBid[]
 }
 
 model Appointment {
@@ -90,4 +100,88 @@ model WinchBooking {
   userLng     Float?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model SparePart {
+  id          String      @id @default(uuid())
+  name        String
+  category    String
+  price       Float
+  stock       Int         @default(0)
+  condition   String      @default("New") // New, Used
+  image       String?
+  workshopId  String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  workshop    Workshop?   @relation(fields: [workshopId], references: [id])
+  orders      PartOrder[]
+}
+
+model PartOrder {
+  id          String      @id @default(uuid())
+  userId      String
+  partId      String
+  quantity    Int         @default(1)
+  totalPrice  Float
+  status      String      @default("Processing") // Processing, Shipped, Delivered, Cancelled
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id])
+  part        SparePart   @relation(fields: [partId], references: [id])
+}
+
+model ChatHistory {
+  id          String   @id @default(uuid())
+  userId      String
+  role        String   // "user" or "model"
+  content     String
+  mediaType   String?  // e.g. "image/jpeg"
+  mediaData   String?  // Base64 data if needed, or null if just text
+  createdAt   DateTime @default(now())
+  
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model Transaction {
+  id            String   @id @default(uuid())
+  userId        String
+  providerId    String?
+  amount        Float
+  commission    Float    @default(0)
+  type          String   // "Winch Ride", "Spare Part", "Workshop"
+  status        String   @default("Completed")
+  createdAt     DateTime @default(now())
+
+  user          User     @relation("UserTransactions", fields: [userId], references: [id])
+  provider      User?    @relation("ProviderTransactions", fields: [providerId], references: [id])
+}
+
+model RepairRequest {
+  id          String   @id @default(uuid())
+  userId      String
+  carDetails  String
+  issue       String
+  imageUrl    String?  // Optional photo of the damage
+  status      String   @default("Open") // Open, Accepted, Completed, Cancelled
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id])
+  bids        RepairBid[]
+}
+
+model RepairBid {
+  id               String   @id @default(uuid())
+  repairRequestId  String
+  workshopId       String
+  price            Float
+  comment          String?
+  status           String   @default("Pending") // Pending, Accepted, Rejected
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  repairRequest    RepairRequest @relation(fields: [repairRequestId], references: [id])
+  workshop         Workshop      @relation(fields: [workshopId], references: [id])
 }
