@@ -133,6 +133,11 @@ app.use('/api/parts', partsRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/bidding', biddingRoutes);
 
+// ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 // ─── SERVE FRONTEND (production only) ─────────────────────────────────────────
 const frontendDistPath = path.join(__dirname, '../../frontend/dist');
 const fs = require('fs');
@@ -144,11 +149,6 @@ if (fs.existsSync(frontendDistPath)) {
   });
 }
 
-// ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
 // ─── GLOBAL ERROR HANDLER ─────────────────────────────────────────────────────
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   // Handle CORS errors
@@ -159,7 +159,7 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   res.status(500).json({ error: 'An unexpected server error occurred.' });
 });
 
-httpServer.listen(PORT, () => {
-  console.log(`✅  Server running on port ${PORT}`);
+httpServer.listen(Number(PORT), '0.0.0.0', () => {
+  console.log(`✅  Server running on port ${PORT} (bound to 0.0.0.0)`);
   console.log(`🛡️  Security: Helmet ✓ | CORS (${allowedOrigins.join(', ')}) ✓ | Rate Limiting ✓ | Body limit: 50mb ✓`);
 });
