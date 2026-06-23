@@ -84,26 +84,24 @@ The user is reporting: "${symptom}". Analyze the input (and any attached media) 
     const resultText = response.text || "{}";
     res.json(JSON.parse(resultText));
   } catch (error: any) {
-    console.error("Gemini API Error:", error.message);
-    if (error.status === 429 || (error.message && error.message.includes("429"))) {
-      let mockReply = "(Simulated due to AI Quota Limit) I recommend checking the hoses for vacuum leaks.";
-      let mockAction = "ASK_MOBILITY";
-      const userText = (symptom || "").toLowerCase();
+    console.error("Gemini API Error:", error.message || error);
+    
+    let mockReply = "(Simulated - AI Core Offline) I recommend checking the hoses for vacuum leaks.";
+    let mockAction = "ASK_MOBILITY";
+    const userText = (symptom || "").toLowerCase();
 
-      if (userText.includes("not moving") || userText.includes("broken") || userText.includes("stuck") || userText.includes("tow")) {
-        mockReply = "(Simulated due to Quota) Since your car is not moving, I recommend requesting a Winch immediately.";
-        mockAction = "WINCH";
-      } else if (userText.includes("hi") || userText.includes("hello") || userText.includes("hey")) {
-        mockReply = "(Simulated due to Quota) Hello! How can I help you today? Is your car currently moving?";
-        mockAction = "ASK_MOBILITY";
-      }
-
-      return res.json({ 
-        reply: mockReply, 
-        action: mockAction 
-      });
+    if (userText.includes("not moving") || userText.includes("broken") || userText.includes("stuck") || userText.includes("tow")) {
+      mockReply = "(Simulated) Since your car is not moving, I recommend requesting a Winch immediately.";
+      mockAction = "WINCH";
+    } else if (userText.includes("hi") || userText.includes("hello") || userText.includes("hey")) {
+      mockReply = "(Simulated) Hello! How can I help you today? Is your car currently moving?";
+      mockAction = "ASK_MOBILITY";
     }
-    res.status(500).json({ error: 'Connection to AI Core interrupted.' });
+
+    return res.json({ 
+      reply: mockReply, 
+      action: mockAction 
+    });
   }
 });
 
