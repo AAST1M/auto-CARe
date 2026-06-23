@@ -70,11 +70,13 @@ router.post('/bid', authenticateToken, requireRole('WORKSHOP_OWNER'), async (req
     // Find the workshop id of the logged in owner
     let workshop = await prisma.workshop.findFirst({ where: { ownerId: req.user!.id } });
     if (!workshop) {
+      const ownerUser = await prisma.user.findUnique({ where: { id: req.user!.id } });
+      const workshopName = ownerUser?.name ? `${ownerUser.name}'s Workshop` : 'My Workshop';
       // Auto-create a default workshop for this owner if they haven't set one up
       workshop = await prisma.workshop.create({
         data: {
           ownerId: req.user!.id,
-          name: req.user!.name || 'My Workshop',
+          name: workshopName,
           services: 'General Repair',
           address: 'Cairo, Egypt'
         }

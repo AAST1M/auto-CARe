@@ -1,12 +1,14 @@
 import rateLimit from 'express-rate-limit';
 
+const isProd = process.env.NODE_ENV === 'production';
+
 /**
  * loginLimiter — Brute-force protection for POST /api/auth/login
  * Max 10 attempts per 15 minutes per IP.
  */
 export const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10,
+  max: isProd ? 10 : 10000,
   standardHeaders: true,   // Return rate-limit info in the `RateLimit-*` headers
   legacyHeaders: false,
   message: {
@@ -20,7 +22,7 @@ export const loginLimiter = rateLimit({
  */
 export const registerLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 5,
+  max: isProd ? 5 : 10000,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -34,10 +36,11 @@ export const registerLimiter = rateLimit({
  */
 export const apiLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 100,
+  max: isProd ? 100 : 10000,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
     error: 'Too many requests from this IP. Please slow down.'
   }
 });
+

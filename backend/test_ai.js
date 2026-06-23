@@ -4,7 +4,7 @@ const dotenv = require('dotenv');
 
 dotenv.config({ path: './.env' });
 
-const token = jwt.sign({ id: 'test_user', role: 'USER' }, 'super_secret_jwt_key_that_is_at_least_32_chars_long');
+const token = jwt.sign({ id: 'test_user', role: 'USER' }, process.env.JWT_SECRET || 'super_secret_jwt_key_that_is_at_least_32_chars_long');
 
 const cases = [
   { language: 'en', symptom: 'My car is leaking green fluid under the engine, but it is still driving fine.' },
