@@ -6,7 +6,7 @@ test.describe('Admin Dashboard E2E', () => {
     const adminPassword = 'Password123!';
 
     // 1. Register an ADMIN user using the API directly
-    const registerRes = await request.post('http://localhost:5001/api/auth/register', {
+    const registerRes = await request.post('http://127.0.0.1:5001/api/auth/register', {
       data: {
         name: 'Super Admin',
         email: adminEmail,

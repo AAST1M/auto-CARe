@@ -6,7 +6,7 @@ test.describe('Winch Dashboard E2E', () => {
     const driverPassword = 'Password123!';
 
     // 1. Register a WINCH_DRIVER user using the API directly
-    const registerRes = await request.post('http://localhost:5001/api/auth/register', {
+    const registerRes = await request.post('http://127.0.0.1:5001/api/auth/register', {
       data: {
         name: 'Speedy Winch',
         email: driverEmail,

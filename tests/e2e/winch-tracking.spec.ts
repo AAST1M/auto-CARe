@@ -9,7 +9,7 @@ test.describe('Winch Tracking E2E', () => {
     const password = 'Password123!';
 
     // Register Winch Driver
-    const regDriver = await request.post('http://localhost:5001/api/auth/register', {
+    const regDriver = await request.post('http://127.0.0.1:5001/api/auth/register', {
       data: {
         name: 'Super Towing',
         email: driverEmail,
@@ -20,7 +20,7 @@ test.describe('Winch Tracking E2E', () => {
     expect(regDriver.ok()).toBeTruthy();
 
     // Register Normal User
-    const regUser = await request.post('http://localhost:5001/api/auth/register', {
+    const regUser = await request.post('http://127.0.0.1:5001/api/auth/register', {
       data: {
         name: 'Stuck Customer',
         email: userEmail,
