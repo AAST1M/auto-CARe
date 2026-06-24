@@ -122,6 +122,8 @@ app.use('/api', apiLimiter);
 import partsRoutes from './routes/parts';
 import chatRoutes from './routes/chat';
 import biddingRoutes from './routes/bidding';
+import walletRoutes from './routes/wallet';
+import { setIo } from './routes/workshops';
 
 // ─── ROUTES ───────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
@@ -132,6 +134,10 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/parts', partsRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/bidding', biddingRoutes);
+app.use('/api/wallet', walletRoutes);
+
+// Pass the io instance to workshops so it can emit real-time events
+setIo(io);
 
 // ─── HEALTH CHECK ─────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {

@@ -26,23 +26,45 @@ const MAP_STYLE: google.maps.MapTypeStyle[] = [
 const USER_MARKER_ICON = (loaded: boolean): google.maps.Icon | undefined => {
   if (!loaded || typeof google === 'undefined') return undefined;
   return {
-    url: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png',
-    scaledSize: new google.maps.Size(44, 44),
-    anchor: new google.maps.Point(22, 44),
+    url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 42" width="32" height="42">
+  <defs>
+    <linearGradient id="userGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#1d4ed8" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="2" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  <path d="M16 2C8.2 2 2 8.2 2 16c0 10.5 12.8 23.5 13.3 24.1.4.4 1 .4 1.4 0C17.2 39.5 30 26.5 30 16 30 8.2 23.8 2 16 2z" fill="url(#userGrad)" stroke="#ffffff" stroke-width="2" filter="url(#shadow)" />
+  <circle cx="16" cy="16" r="8" fill="#ffffff" />
+  <text x="16" y="20.5" font-family="system-ui, -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" font-weight="900" fill="#1d4ed8" text-anchor="middle">U</text>
+</svg>
+`)}`,
+    scaledSize: new google.maps.Size(40, 52),
+    anchor: new google.maps.Point(20, 52),
   };
 };
 
 const DRIVER_MARKER_ICON = (loaded: boolean): google.maps.Icon | undefined => {
   if (!loaded || typeof google === 'undefined') return undefined;
   return {
-    path: 'M18 4l-2-2H8L6 4H2v2h20V4zM5 20c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V8H5v12zm6.5-4.5l-3-3L10 11l1.5 1.5L15 9l1.5 1.5-5 5z',
-    fillColor: '#ef4444',
-    fillOpacity: 1,
-    strokeColor: '#fff',
-    strokeWeight: 1.5,
-    scale: 1.4,
-    anchor: new google.maps.Point(12, 24),
-  } as google.maps.Symbol & google.maps.Icon;
+    url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40">
+  <defs>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="3" stdDeviation="2.5" flood-color="#d97706" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+  <circle cx="20" cy="20" r="16" fill="#ffffff" stroke="#f59e0b" stroke-width="3" filter="url(#glow)" />
+  <circle cx="20" cy="20" r="12" fill="#d97706" />
+  <path d="M14 15h4.5l2 2.5h4c.6 0 1 .4 1 1v4.5c0 .3-.2.5-.5.5H23.5c-.3-1.2-1.3-2-2.5-2s-2.2.8-2.5 2H13.5c-.3 0-.5-.2-.5-.5v-5c0-.6.4-1 1-1zm3.5 8c0-.6-.4-1-1-1s-1 .4-1 1 .4 1 1 1 1-.4 1-1zm8 0c0-.6-.4-1-1-1s-1 .4-1 1 .4 1 1 1 1-.4 1-1z" fill="#ffffff" />
+</svg>
+`)}`,
+    scaledSize: new google.maps.Size(44, 44),
+    anchor: new google.maps.Point(22, 22),
+  };
 };
 
 interface LiveMapProps {
@@ -50,9 +72,13 @@ interface LiveMapProps {
   userLng?: number;
   driverLat?: number;
   driverLng?: number;
+  mapTypeId?: string;
+  zoom?: number;
+  onZoomChange?: (zoom: number) => void;
+  onMapLoadExternal?: (map: google.maps.Map) => void;
 }
 
-export const LiveMap: React.FC<LiveMapProps> = ({ userLat, userLng, driverLat, driverLng }) => {
+export const LiveMap: React.FC<LiveMapProps> = ({ userLat, userLng, driverLat, driverLng, mapTypeId = 'roadmap', zoom = 14, onZoomChange, onMapLoadExternal }) => {
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_KEY,
     libraries: LIBRARIES,
@@ -138,12 +164,24 @@ export const LiveMap: React.FC<LiveMapProps> = ({ userLat, userLng, driverLat, d
       <GoogleMap
         mapContainerStyle={MAP_CONTAINER_STYLE}
         center={center}
-        zoom={14}
-        onLoad={onMapLoad}
+        zoom={zoom}
+        mapTypeId={mapTypeId}
+        onLoad={(map) => {
+          onMapLoad(map);
+          if (onMapLoadExternal) onMapLoadExternal(map);
+        }}
+        onZoomChanged={() => {
+          if (mapRef.current && onZoomChange) {
+            const currentZoom = mapRef.current.getZoom();
+            if (currentZoom !== undefined) {
+              onZoomChange(currentZoom);
+            }
+          }
+        }}
         options={{
-          styles: MAP_STYLE,
+          styles: mapTypeId === 'roadmap' ? MAP_STYLE : [],
           disableDefaultUI: false,
-          zoomControl: true,
+          zoomControl: false,
           fullscreenControl: false,
           streetViewControl: false,
           mapTypeControl: false,

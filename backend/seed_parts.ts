@@ -43,6 +43,17 @@ async function main() {
         stock: 15,
         condition: "New",
         image: "https://picsum.photos/400/300?spark"
+      },
+      {
+        name: "Suspension Control Arm",
+        category: "Body",
+        price: 1500,
+        stock: 5,
+        condition: "New",
+        image: "https://picsum.photos/400/300?suspension",
+        compatibilityModel: "Honda Civic",
+        compatibilityYearStart: 2019,
+        compatibilityYearEnd: 2022
       }
     ]
   });

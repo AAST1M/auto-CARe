@@ -38,7 +38,7 @@ test.describe('Workshop Dashboard E2E', () => {
     // Verify status changes and "Check In" button is now visible
     // "Ahmed Ali" is the first one, let's verify its Check In button
     // It should now have "Check In" instead of "Accept"
-    await expect(page.locator('div').filter({ hasText: 'Ahmed Ali' }).getByRole('button', { name: 'Check In' })).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('div').filter({ hasText: 'Ahmed Ali' }).getByRole('button', { name: 'Check In' }).first()).toBeVisible({ timeout: 5000 });
 
     // Verify "Live Job Board" exists and works
     await page.click('text=Live Job Board');

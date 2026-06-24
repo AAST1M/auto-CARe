@@ -26,6 +26,34 @@ model User {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
+  approvalStatus        String        @default("APPROVED") // PENDING, APPROVED, REJECTED
+  commissionOwed        Float         @default(0) // Unpaid cash-ride commission debt (WINCH_DRIVER only)
+
+  // Winch Driver specific fields
+  licenseExpiry         String?
+  plateNumber           String?
+  criminalRecordCert    String?       // Base64 document
+  driverPhoto           String?       // Base64 photo
+  nationalIdCard        String?       // Base64 photo/doc
+
+  // Workshop Owner specific fields
+  taxCard               String?       // Base64 document
+  workshopLocation      String?       // Coords or Address string
+  ownerNationalIdCard   String?       // Base64 document
+  workshopName          String?       // Workshop name if they want to create workshop directly
+
+  // Customer specific fields
+  userPlateNumber       String?
+  userNationalId        String?
+  carBrand              String?
+  carModel              String?
+  carYear               Int?
+  chassisNumber         String?       // Optional
+  carPhotoFront         String?       // Base64 photo
+  carPhotoBack          String?       // Base64 photo
+  carPhotoRight         String?       // Base64 photo
+  carPhotoLeft          String?       // Base64 photo
+
   workshops      Workshop[]    @relation("OwnerWorkshops")
   appointments   Appointment[] @relation("UserAppointments")
   partOrders     PartOrder[]
@@ -48,6 +76,9 @@ model Workshop {
   hours         String?
   services      String // Comma separated string for simplicity in SQLite, or JSON if supported
   description   String?
+  latitude      Float?  // GPS coordinates
+  longitude     Float?
+  commercialRegister String? // Base64 commercial register document
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -63,7 +94,8 @@ model Appointment {
   workshopId    String
   serviceType   String
   carDetails    String?
-  time          String
+  date          String?  // e.g. "2024-06-24"
+  time          String   // e.g. "10:00"
   status        String   @default("Pending") // Pending, Confirmed, Checked-In, Completed, Cancelled
   progress      Int      @default(0) // 0 to 100 for live tracking
   price         Float
@@ -103,19 +135,23 @@ model WinchBooking {
 }
 
 model SparePart {
-  id          String      @id @default(uuid())
-  name        String
-  category    String
-  price       Float
-  stock       Int         @default(0)
-  condition   String      @default("New") // New, Used
-  image       String?
-  workshopId  String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id                     String      @id @default(uuid())
+  name                   String
+  category               String
+  price                  Float
+  stock                  Int         @default(0)
+  condition              String      @default("New") // New, Used
+  image                  String?
+  workshopId             String?
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
 
-  workshop    Workshop?   @relation(fields: [workshopId], references: [id])
-  orders      PartOrder[]
+  compatibilityModel     String?
+  compatibilityYearStart Int?
+  compatibilityYearEnd   Int?
+
+  workshop               Workshop?   @relation(fields: [workshopId], references: [id])
+  orders                 PartOrder[]
 }
 
 model PartOrder {

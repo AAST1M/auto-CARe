@@ -4,14 +4,85 @@ import { useNavigate } from 'react-router-dom';
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config';
+import { GoogleMap, Marker as GMarker, useJsApiLoader } from '@react-google-maps/api';
+import { FileText, MapPin } from 'lucide-react';
+
+const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || '';
+const GMAP_LIBRARIES: ('places' | 'geometry')[] = ['places', 'geometry'];
 
 export const WorkshopDashboard = () => {
   const navigate = useNavigate();
   const { user, refreshUser } = useAuth();
   const { carsInWorkshop, setCarsInWorkshop } = useAppContext();
   const [showWorkshopWallet, setShowWorkshopWallet] = React.useState(false);
+  const [showWorkshopProfile, setShowWorkshopProfile] = useState(false);
+  const [myWorkshop, setMyWorkshop] = useState<any>(null);
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const { isLoaded: isMapLoaded } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_MAPS_KEY,
+    libraries: GMAP_LIBRARIES,
+  });
+
+  const [profileForm, setProfileForm] = useState({
+    name: '',
+    description: '',
+    address: '',
+    latitude: 30.0444,
+    longitude: 31.2357,
+    image: ''
+  });
+
+  useEffect(() => {
+    if (myWorkshop) {
+      setProfileForm({
+        name: myWorkshop.name || '',
+        description: myWorkshop.description || '',
+        address: myWorkshop.address || '',
+        latitude: myWorkshop.latitude || 30.0444,
+        longitude: myWorkshop.longitude || 31.2357,
+        image: myWorkshop.image || ''
+      });
+    }
+  }, [myWorkshop]);
+
+  const fetchMyWorkshop = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_URL}/api/workshops/my`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.length > 0) {
+            setMyWorkshop(data[0]);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleUpdateProfile = async () => {
+    if (!myWorkshop) return;
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(`${API_URL}/api/workshops/${myWorkshop.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(profileForm)
+      });
+      if (res.ok) {
+        alert('Profile updated successfully!');
+        fetchMyWorkshop();
+        setShowWorkshopProfile(false);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   // Fallback
   const safeUser = user || { walletBalance: 0, shopName: 'My Workshop' } as any;
@@ -37,6 +108,7 @@ export const WorkshopDashboard = () => {
 
   useEffect(() => {
     fetchAppointments();
+    fetchMyWorkshop();
   }, []);
 
   const handleWorkshopAction = async (id: string, action: string) => {
@@ -108,7 +180,61 @@ export const WorkshopDashboard = () => {
 
   return (
       <div className="flex flex-col h-screen bg-slate-100 dark:bg-cyber-900">
-          {showWorkshopWallet ? (
+          {showWorkshopProfile ? (
+              <div className="flex-1 p-6 pt-12 flex flex-col overflow-y-auto">
+                   <button aria-label="Back" onClick={() => setShowWorkshopProfile(false)} className="mb-6 w-fit text-slate-900 dark:text-white"><ArrowLeft /></button>
+                   <h2 className="text-2xl font-bold font-display mb-6 text-slate-900 dark:text-white">Workshop Profile</h2>
+                   
+                   <div className="space-y-4">
+                     <div>
+                       <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1 mb-1 block">Workshop Name</label>
+                       <input type="text" value={profileForm.name} onChange={e => setProfileForm({...profileForm, name: e.target.value})} className="w-full bg-white dark:bg-black/40 p-4 rounded-xl outline-none text-slate-900 dark:text-white border border-gray-200 dark:border-gray-800" />
+                     </div>
+                     <div>
+                       <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1 mb-1 block">Description</label>
+                       <textarea value={profileForm.description} onChange={e => setProfileForm({...profileForm, description: e.target.value})} className="w-full bg-white dark:bg-black/40 p-4 rounded-xl outline-none text-slate-900 dark:text-white border border-gray-200 dark:border-gray-800 h-24" />
+                     </div>
+                     <div>
+                       <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1 mb-1 block">Address</label>
+                       <input type="text" value={profileForm.address} onChange={e => setProfileForm({...profileForm, address: e.target.value})} className="w-full bg-white dark:bg-black/40 p-4 rounded-xl outline-none text-slate-900 dark:text-white border border-gray-200 dark:border-gray-800" />
+                     </div>
+                     <div>
+                       <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1 mb-1 block">Pin Location on Map</label>
+                       {isMapLoaded ? (
+                         <div className="h-48 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-800 relative">
+                           <GoogleMap
+                             mapContainerStyle={{ width: '100%', height: '100%' }}
+                             center={{ lat: profileForm.latitude, lng: profileForm.longitude }}
+                             zoom={14}
+                             onClick={(e) => {
+                               if (e.latLng) {
+                                 setProfileForm({ ...profileForm, latitude: e.latLng.lat(), longitude: e.latLng.lng() });
+                               }
+                             }}
+                             options={{ disableDefaultUI: true }}
+                           >
+                             <GMarker position={{ lat: profileForm.latitude, lng: profileForm.longitude }} />
+                           </GoogleMap>
+                           <div className="absolute bottom-2 left-2 right-2 bg-black/60 text-white text-xs p-2 rounded text-center backdrop-blur-md">
+                             Tap map to set location
+                           </div>
+                         </div>
+                       ) : (
+                         <div className="h-48 bg-gray-200 dark:bg-gray-800 rounded-xl flex items-center justify-center animate-pulse">Loading map...</div>
+                       )}
+                     </div>
+                     
+                     <div>
+                       <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1 mb-1 block">Cover Photo URL / Base64</label>
+                       <input type="text" value={profileForm.image} onChange={e => setProfileForm({...profileForm, image: e.target.value})} placeholder="https://..." className="w-full bg-white dark:bg-black/40 p-4 rounded-xl outline-none text-slate-900 dark:text-white border border-gray-200 dark:border-gray-800 mb-2" />
+                       {profileForm.image && <img src={profileForm.image} alt="Preview" className="w-full h-32 object-cover rounded-xl" />}
+                     </div>
+
+                   </div>
+
+                   <button onClick={handleUpdateProfile} className="mt-8 mb-8 w-full py-4 bg-cyber-primary text-white rounded-xl font-bold shadow-lg">Save Profile</button>
+              </div>
+          ) : showWorkshopWallet ? (
              <div className="flex-1 p-6 pt-12 flex flex-col">
                    <button aria-label="Back" onClick={() => setShowWorkshopWallet(false)} className="mb-6 w-fit text-slate-900 dark:text-white"><ArrowLeft /></button>
                    <h2 className="text-2xl font-bold font-display mb-6 text-slate-900 dark:text-white">Shop Wallet</h2>
@@ -219,10 +345,11 @@ export const WorkshopDashboard = () => {
                 </div>
            </div>
            
-            <div className="p-4 glass-panel flex justify-around items-center">
+            <div className="p-4 glass-panel flex justify-around items-center shrink-0">
                 <button className="text-cyber-primary flex flex-col items-center"><Calendar size={24}/><span className="text-[10px]">Bookings</span></button>
                 <button className="text-gray-400 flex flex-col items-center" onClick={() => setShowWorkshopWallet(true)}><Wallet size={24}/><span className="text-[10px]">Wallet</span></button>
-                <button className="text-gray-400 flex flex-col items-center" onClick={() => navigate('/profile')}><User size={24}/><span className="text-[10px]">Profile</span></button>
+                <button className="text-gray-400 flex flex-col items-center" onClick={() => { setShowWorkshopProfile(true); setShowWorkshopWallet(false); }}><MapPin size={24}/><span className="text-[10px]">Profile</span></button>
+                <button className="text-gray-400 flex flex-col items-center" onClick={() => navigate('/profile')}><User size={24}/><span className="text-[10px]">Account</span></button>
            </div>
            </>
           )}

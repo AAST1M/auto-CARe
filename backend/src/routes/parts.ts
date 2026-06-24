@@ -8,10 +8,10 @@ const router = Router();
 // GET all spare parts
 router.get('/', async (req, res) => {
   try {
-    const { category, search, cursor, take } = req.query;
+    const { category, search, cursor, take, model, year } = req.query;
     
     // Create cache key based on query params
-    const cacheKey = `parts:all:cat=${category || 'All'}:search=${search || ''}:cursor=${cursor || ''}:take=${take || ''}`;
+    const cacheKey = `parts:all:cat=${category || 'All'}:search=${search || ''}:cursor=${cursor || ''}:take=${take || ''}:model=${model || ''}:year=${year || ''}`;
     const cached = await getCache(cacheKey);
     if (cached) return res.json(cached);
 
@@ -24,6 +24,41 @@ router.get('/', async (req, res) => {
         contains: String(search),
         mode: 'insensitive',
       };
+    }
+    
+    // Filter by car model compatibility (if provided)
+    if (model) {
+      whereClause.OR = [
+        { compatibilityModel: null },
+        { compatibilityModel: "" },
+        {
+          compatibilityModel: {
+            contains: String(model),
+            mode: 'insensitive'
+          }
+        }
+      ];
+    }
+    
+    // Filter by car year compatibility (if provided)
+    if (year) {
+      const yearNum = parseInt(String(year));
+      if (!isNaN(yearNum)) {
+        whereClause.AND = [
+          {
+            OR: [
+              { compatibilityYearStart: null },
+              { compatibilityYearStart: { lte: yearNum } }
+            ]
+          },
+          {
+            OR: [
+              { compatibilityYearEnd: null },
+              { compatibilityYearEnd: { gte: yearNum } }
+            ]
+          }
+        ];
+      }
     }
 
     const parts = await prisma.sparePart.findMany({
@@ -50,7 +85,12 @@ router.get('/', async (req, res) => {
 // POST a new spare part (Workshop Owner only)
 router.post('/', authenticateToken, requireRole('WORKSHOP_OWNER'), async (req: any, res) => {
   try {
-    const { name, category, price, stock, condition, image, workshopId } = req.body;
+    const ownerUser = await prisma.user.findUnique({ where: { id: req.user.id } });
+    if (!ownerUser || ownerUser.approvalStatus !== 'APPROVED') {
+      return res.status(403).json({ error: 'Your account is pending admin approval or has been rejected.' });
+    }
+
+    const { name, category, price, stock, condition, image, workshopId, compatibilityModel, compatibilityYearStart, compatibilityYearEnd } = req.body;
 
     if (!name || !category || price === undefined) {
       return res.status(400).json({ error: 'Name, category, and price are required' });
@@ -58,6 +98,8 @@ router.post('/', authenticateToken, requireRole('WORKSHOP_OWNER'), async (req: a
 
     const parsedPrice = parseFloat(price);
     const parsedStock = parseInt(stock) || 0;
+    const parsedYearStart = compatibilityYearStart ? parseInt(compatibilityYearStart) : null;
+    const parsedYearEnd = compatibilityYearEnd ? parseInt(compatibilityYearEnd) : null;
 
     const part = await prisma.sparePart.create({
       data: {
@@ -68,6 +110,9 @@ router.post('/', authenticateToken, requireRole('WORKSHOP_OWNER'), async (req: a
         condition: condition || 'New',
         image: image || 'https://picsum.photos/400/300?car-part',
         workshopId: workshopId || null,
+        compatibilityModel: compatibilityModel || null,
+        compatibilityYearStart: parsedYearStart,
+        compatibilityYearEnd: parsedYearEnd,
       }
     });
 

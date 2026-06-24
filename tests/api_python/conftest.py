@@ -31,18 +31,15 @@ def auth_headers(random_email):
 
 @pytest.fixture
 def admin_headers():
-    """Registers an ADMIN user and returns auth headers."""
-    random_str = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
-    email = f"admin_{int(time.time())}_{random_str}@example.com"
+    """Logs in with the seeded ADMIN account and returns auth headers."""
     payload = {
-        "name": "Admin Tester",
-        "email": email,
-        "password": "Password123!",
-        "role": "ADMIN"
+        "email": "admin@autocare.ai",
+        "password": "Admin123"
     }
-    response = requests.post(f"{BASE_URL}/auth/register", json=payload)
-    assert response.status_code in [200, 201]
+    response = requests.post(f"{BASE_URL}/auth/login", json=payload)
+    assert response.status_code in [200, 201], f"Admin login failed: {response.text}"
     token = response.json().get("token")
+    assert token, "No token returned from admin login"
     return {"Authorization": f"Bearer {token}"}
 
 @pytest.fixture

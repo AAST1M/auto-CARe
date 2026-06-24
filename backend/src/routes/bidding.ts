@@ -33,6 +33,11 @@ router.post('/request', authenticateToken, async (req: AuthRequest, res) => {
 // ── GET: List Open Requests (For Workshops) ────────────────────────────────────
 router.get('/requests', authenticateToken, requireRole('WORKSHOP_OWNER'), async (req: AuthRequest, res) => {
   try {
+    const ownerUser = await prisma.user.findUnique({ where: { id: req.user!.id } });
+    if (!ownerUser || ownerUser.approvalStatus !== 'APPROVED') {
+      return res.status(403).json({ error: 'Your account is pending admin approval or has been rejected.' });
+    }
+
     const requests = await prisma.repairRequest.findMany({
       where: { status: 'Open' },
       include: { user: { select: { name: true } }, bids: true },
@@ -65,6 +70,11 @@ router.get('/my-requests', authenticateToken, async (req: AuthRequest, res) => {
 // ── WORKSHOP: Submit a Bid ─────────────────────────────────────────────────────
 router.post('/bid', authenticateToken, requireRole('WORKSHOP_OWNER'), async (req: AuthRequest, res) => {
   try {
+    const ownerUser = await prisma.user.findUnique({ where: { id: req.user!.id } });
+    if (!ownerUser || ownerUser.approvalStatus !== 'APPROVED') {
+      return res.status(403).json({ error: 'Your account is pending admin approval or has been rejected.' });
+    }
+
     const { repairRequestId, price, comment } = req.body;
     
     // Find the workshop id of the logged in owner

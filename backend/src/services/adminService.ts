@@ -41,6 +41,14 @@ export async function getAdminStats() {
     select: { price: true }
   });
 
+  // 5. Pending commission stats
+  const driversWithDebt = await prisma.user.findMany({
+    where: { role: 'WINCH_DRIVER', commissionOwed: { gt: 0 } },
+    select: { commissionOwed: true }
+  });
+  const pendingCommissionTotal = driversWithDebt.reduce((sum, d) => sum + d.commissionOwed, 0);
+  const pendingCommissionDrivers = driversWithDebt.length;
+
   // Calculations
   const workshopRevenue = appointments.reduce((sum, item) => sum + item.price, 0);
   const winchRevenue = winchBookings.reduce((sum, item) => sum + item.price, 0);
@@ -58,6 +66,8 @@ export async function getAdminStats() {
     completedAppointments: appointments.filter(a => a.status === 'Completed').length,
     completedWinchBookings: winchBookings.length,
     onlineUsersCount: getOnlineUsersCount(),
+    pendingCommissionTotal,
+    pendingCommissionDrivers,
     systemHealth: 'OK'
   };
 }
@@ -123,7 +133,28 @@ export async function getAdminUsers() {
       phone: true,
       role: true,
       walletBalance: true,
-      createdAt: true
+      createdAt: true,
+      approvalStatus: true,
+      commissionOwed: true,
+      licenseExpiry: true,
+      plateNumber: true,
+      criminalRecordCert: true,
+      driverPhoto: true,
+      nationalIdCard: true,
+      taxCard: true,
+      workshopLocation: true,
+      ownerNationalIdCard: true,
+      workshopName: true,
+      userPlateNumber: true,
+      userNationalId: true,
+      carBrand: true,
+      carModel: true,
+      carYear: true,
+      chassisNumber: true,
+      carPhotoFront: true,
+      carPhotoBack: true,
+      carPhotoRight: true,
+      carPhotoLeft: true
     },
     orderBy: { createdAt: 'desc' }
   });
@@ -134,3 +165,34 @@ export async function getAdminUsers() {
     isOnline: onlineUserIds.includes(u.id)
   }));
 }
+
+// ─── Get all winch drivers with pending commission debt ───────────────────────
+export async function getDriverCommissions() {
+  const drivers = await prisma.user.findMany({
+    where: { role: 'WINCH_DRIVER' },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      phone: true,
+      commissionOwed: true,
+      walletBalance: true,
+      approvalStatus: true
+    },
+    orderBy: { commissionOwed: 'desc' }
+  });
+
+  // Fetch ride counts per driver
+  const rideCounts = await prisma.winchBooking.groupBy({
+    by: ['driverId'],
+    _count: { id: true }
+  });
+  const rideCountMap = new Map(rideCounts.map(r => [r.driverId, r._count.id]));
+
+  return drivers.map(d => ({
+    ...d,
+    totalRides: rideCountMap.get(d.id) || 0,
+    hasDebt: d.commissionOwed > 0
+  }));
+}
+

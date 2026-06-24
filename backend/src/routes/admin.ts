@@ -1,6 +1,7 @@
 import { Router, Response } from 'express';
 import { authenticateToken, requireRole, AuthRequest } from '../middleware/auth';
-import { getAdminStats, getAdminTransactions, getAdminUsers } from '../services/adminService';
+import { getAdminStats, getAdminTransactions, getAdminUsers, getDriverCommissions } from '../services/adminService';
+import prisma from '../prismaClient';
 
 const router = Router();
 
@@ -32,6 +33,82 @@ router.get('/users', authenticateToken, requireRole('ADMIN'), async (req: AuthRe
     const users = await getAdminUsers();
     res.json(users);
   } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── GET /api/admin/commission — Get all winch drivers with pending commission ─
+router.get('/commission', authenticateToken, requireRole('ADMIN'), async (req: AuthRequest, res) => {
+  try {
+    const drivers = await getDriverCommissions();
+    res.json(drivers);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── PATCH /api/admin/users/:id/commission — Admin sets commission amount ──────
+router.patch('/users/:id/commission', authenticateToken, requireRole('ADMIN'), async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const { commissionOwed } = req.body;
+
+    if (commissionOwed === undefined || isNaN(Number(commissionOwed)) || Number(commissionOwed) < 0) {
+      return res.status(400).json({ error: 'A valid non-negative commission amount is required' });
+    }
+
+    // Verify it's a winch driver
+    const driver = await prisma.user.findUnique({
+      where: { id: id as string },
+      select: { role: true, name: true, email: true }
+    });
+    if (!driver) return res.status(404).json({ error: 'User not found' });
+    if (driver.role !== 'WINCH_DRIVER') {
+      return res.status(400).json({ error: 'Commission can only be set for winch drivers' });
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: id as string },
+      data: { commissionOwed: parseFloat(Number(commissionOwed).toFixed(2)) },
+      select: { id: true, email: true, name: true, role: true, commissionOwed: true }
+    });
+
+    res.json(updated);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Approve user
+router.patch('/users/:id/approve', authenticateToken, requireRole('ADMIN'), async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const updated = await prisma.user.update({
+      where: { id: id as string },
+      data: { approvalStatus: 'APPROVED' },
+      select: { id: true, email: true, name: true, role: true, approvalStatus: true }
+    });
+    res.json(updated);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Reject user
+router.patch('/users/:id/reject', authenticateToken, requireRole('ADMIN'), async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const updated = await prisma.user.update({
+      where: { id: id as string },
+      data: { approvalStatus: 'REJECTED' },
+      select: { id: true, email: true, name: true, role: true, approvalStatus: true }
+    });
+    res.json(updated);
+  } catch (error) {
+    console.error(error);
     res.status(500).json({ error: 'Server error' });
   }
 });

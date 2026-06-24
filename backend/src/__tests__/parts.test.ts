@@ -35,7 +35,7 @@ describe('Parts Routes - Checkout', () => {
         workshopId: null,
         createdAt: new Date(),
         updatedAt: new Date()
-      });
+      } as any);
 
       // Use a mock function for prisma.$transaction
       prismaMock.$transaction.mockImplementation(async (callback) => {
@@ -91,7 +91,7 @@ describe('Parts Routes - Checkout', () => {
         workshopId: null,
         createdAt: new Date(),
         updatedAt: new Date()
-      });
+      } as any);
 
       prismaMock.$transaction.mockImplementation(async (callback) => {
         const tx = {

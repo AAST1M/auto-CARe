@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { ArrowLeft, MapPin, Truck, Wallet, User, Power } from 'lucide-react';
+import { ArrowLeft, MapPin, Truck, Wallet, User, Power, AlertTriangle, CreditCard, CheckCircle, X, Layers, Plus, Minus, Navigation, Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { LiveMap } from '../components/LiveMap';
@@ -16,10 +16,34 @@ export const WinchDashboard = () => {
   const [driverLoc, setDriverLoc] = React.useState({ lat: 30.0500, lng: 31.2400 });
   const [userLoc, setUserLoc] = React.useState({ lat: 30.0444, lng: 31.2357 });
   const [timer, setTimer] = React.useState(30);
+  const [payLoading, setPayLoading] = React.useState(false);
+  const [payResult, setPayResult] = React.useState<{ success: boolean; message: string } | null>(null);
+  
+  // History state
+  const [history, setHistory] = React.useState<any[]>([]);
+  const [showHistory, setShowHistory] = React.useState(false);
+  const [historyFilter, setHistoryFilter] = React.useState('last24h');
+
   const socketRef = useRef<Socket | null>(null);
   const watchIdRef = useRef<number | null>(null);
 
-  const safeUser = user || { walletBalance: 0, name: 'Driver', id: '' } as any;
+  const fetchHistory = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/winch/history`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      const data = await res.json();
+      setHistory(data || []);
+    } catch (e) { console.error('Failed to fetch history', e); }
+  };
+
+  React.useEffect(() => {
+    if (showHistory) fetchHistory();
+  }, [showHistory]);
+
+  const safeUser = user || { walletBalance: 0, name: 'Driver', id: '', approvalStatus: 'PENDING', commissionOwed: 0 } as any;
+  const commissionOwed = safeUser.commissionOwed || 0;
+  const hasDebt = commissionOwed > 0;
 
   // Connect socket once on mount
   useEffect(() => {
@@ -44,6 +68,11 @@ export const WinchDashboard = () => {
 
     socket.on('booking_error', (data: any) => alert(data.message));
 
+    socket.on('driver_error', (data: any) => {
+      alert(data.message);
+      setIsOnline(false);
+    });
+
     return () => { socket.disconnect(); };
   }, []);
 
@@ -60,10 +89,15 @@ export const WinchDashboard = () => {
     const socket = socketRef.current;
     if (!socket) return;
 
-    if (isOnline) {
-      socket.emit('driver_offline');
-      setIsOnline(false);
-    } else {
+    if (!isOnline) {
+      if (safeUser.approvalStatus === 'BLOCKED') {
+        alert('You are currently blocked by the admin. Please contact support.');
+        return;
+      }
+      if (commissionOwed > 0) {
+        alert('Please settle your commission debt to go online.');
+        return;
+      }
       socket.emit('driver_online', {
         driverId: safeUser.id,
         driverName: safeUser.name || 'Driver',
@@ -71,6 +105,9 @@ export const WinchDashboard = () => {
         price: 500,
       });
       setIsOnline(true);
+    } else {
+      socket.emit('driver_offline');
+      setIsOnline(false);
     }
   };
 
@@ -139,6 +176,74 @@ export const WinchDashboard = () => {
 
   return (
     <div className="flex flex-col h-screen bg-slate-100 dark:bg-cyber-900">
+      {/* ── HISTORY MODAL ─────────────────────────────────────────────────── */}
+      {showHistory && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-slate-100 dark:bg-cyber-900">
+          <div className="p-6 pt-12 flex items-center justify-between shadow-sm bg-white dark:bg-cyber-900">
+            <button onClick={() => setShowHistory(false)} className="p-2 rounded-full glass-panel text-slate-900 dark:text-white"><ArrowLeft size={20} /></button>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Recent Rides</h2>
+            <div className="w-10"></div>
+          </div>
+          
+          <div className="p-4 flex gap-2 overflow-x-auto pb-2">
+            {['last24h', 'yesterday', '1week', '2weeks', '1month'].map(filter => (
+              <button 
+                key={filter}
+                onClick={() => setHistoryFilter(filter)}
+                className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-bold transition-colors ${historyFilter === filter ? 'bg-cyber-primary text-white shadow-md' : 'bg-white dark:bg-gray-800 text-slate-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700'}`}
+              >
+                {filter === 'last24h' ? 'Last 24h' : filter === 'yesterday' ? 'Yesterday' : filter === '1week' ? 'Past Week' : filter === '2weeks' ? 'Past 2 Weeks' : 'Past Month'}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {history.filter(h => {
+              const date = new Date(h.createdAt);
+              const now = new Date();
+              const diffTime = Math.abs(now.getTime() - date.getTime());
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              if (historyFilter === 'last24h') return diffTime <= 24 * 60 * 60 * 1000;
+              if (historyFilter === 'yesterday') return diffDays === 1;
+              if (historyFilter === '1week') return diffDays <= 7;
+              if (historyFilter === '2weeks') return diffDays <= 14;
+              if (historyFilter === '1month') return diffDays <= 30;
+              return true;
+            }).map((trip, idx) => (
+              <div key={idx} className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-sm border border-gray-100 dark:border-gray-800 relative">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <h4 className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Clock size={14} className="text-cyber-primary" />
+                      {new Date(trip.createdAt).toLocaleString()}
+                    </h4>
+                    <p className="text-xs text-gray-500">Customer: {trip.userId}</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-cyber-primary font-bold text-lg">{trip.price} EGP</span>
+                    <span className={`block text-[10px] font-bold mt-1 px-2 py-0.5 rounded-full ${trip.status === 'Completed' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
+                      {trip.status}
+                    </span>
+                  </div>
+                </div>
+                <div className="bg-slate-50 dark:bg-black/30 p-3 rounded-lg flex items-center justify-between text-xs text-slate-600 dark:text-gray-400">
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"></span> Pickup</div>
+                    <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500"></span> Dropoff</div>
+                  </div>
+                  <div className="text-right">
+                    Commission: <span className="text-red-500 font-bold">{(trip.price * 0.1).toFixed(2)} EGP</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {history.length === 0 && (
+              <div className="text-center py-10 text-gray-500">No rides found for this period.</div>
+            )}
+          </div>
+        </div>
+      )}
+
       {showWinchWallet ? (
         <div className="flex-1 p-6 pt-12 flex flex-col">
           <button aria-label="Back" onClick={() => setShowWinchWallet(false)} className="mb-6 w-fit text-slate-900 dark:text-white"><ArrowLeft /></button>
@@ -267,7 +372,12 @@ export const WinchDashboard = () => {
           {/* ── BOTTOM NAV ────────────────────────────────────────────────────── */}
           <div className="p-4 glass-panel flex justify-around items-center">
             <button className="text-cyber-primary flex flex-col items-center"><Truck size={24}/><span className="text-[10px]">Requests</span></button>
-            <button className="text-gray-400 flex flex-col items-center" onClick={() => setShowWinchWallet(true)}><Wallet size={24}/><span className="text-[10px]">Wallet</span></button>
+            <button className="text-gray-400 flex flex-col items-center relative" onClick={() => setShowWinchWallet(true)}>
+              <Wallet size={24}/>
+              {hasDebt && <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse" />}
+              <span className="text-[10px]">Wallet</span>
+            </button>
+            <button className="text-gray-400 flex flex-col items-center" onClick={() => setShowHistory(true)}><Clock size={24}/><span className="text-[10px]">History</span></button>
             <button className="text-gray-400 flex flex-col items-center" onClick={() => navigate('/profile')}><User size={24}/><span className="text-[10px]">Profile</span></button>
           </div>
         </>

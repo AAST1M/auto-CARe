@@ -9,106 +9,118 @@ const { chromium } = require('playwright');
   // Context 1: Driver
   console.log('Setting up Driver Context...');
   const driverContext = await browser.newContext();
+  await driverContext.setGeolocation({ latitude: 30.0500, longitude: 31.2400 });
+  await driverContext.grantPermissions(['geolocation']);
   const driverPage = await driverContext.newPage();
   
   // Context 2: User
   console.log('Setting up User Context...');
   const userContext = await browser.newContext();
+  await userContext.setGeolocation({ latitude: 30.0450, longitude: 31.2350 });
+  await userContext.grantPermissions(['geolocation']);
   const userPage = await userContext.newPage();
 
+  const driverEmail = `driver_${Date.now()}@test.com`;
+  const userEmail = `user_${Date.now()}@test.com`;
+  const password = 'Password123!';
+
   try {
-    // 1. Driver signs up
-    console.log('Driver: Navigating to login...');
-    await driverPage.goto('http://localhost:3000/login');
+    // 1. Provision accounts via API
+    console.log('Provisioning test accounts...');
     
-    // Switch to sign up
-    await driverPage.click('text="Sign Up"');
-    
-    // Fill out sign up form
-    const driverEmail = `driver_${Date.now()}@test.com`;
-    await driverPage.fill('input[placeholder="Full Name"]', 'Test Driver');
-    await driverPage.fill('input[type="email"]', driverEmail);
-    await driverPage.fill('input[placeholder="Password (min 8 chars, 1 uppercase, 1 number)"]', 'Password123');
-    await driverPage.click('button:has-text("Create Account")');
-    
-    // Select Winch Driver Role
-    await driverPage.selectOption('select', 'WINCH_DRIVER');
-    
-    // Fill out Winch Onboarding
-    await driverPage.fill('input[placeholder="e.g. ABC 1234"]', 'ABC 1234');
-    await driverPage.fill('input[placeholder="14-digit National ID"]', '12345678901234');
-    await driverPage.selectOption('select', 'Flatbed');
-    await driverPage.click('button:has-text("Complete Setup")');
-    
-    // Wait for Dashboard to load and go Online
-    await driverPage.waitForSelector('text="Winch Command"');
-    console.log('Driver: Successfully logged in and on Dashboard.');
-    
-    // Click the toggle to go online. It's a div, so we find it by the parent text "Offline" or just click the toggle.
-    // The text spans have "Offline". Let's click the element next to it.
-    await driverPage.click('text="Offline"');
-    await driverPage.waitForSelector('text="Online"');
-    console.log('Driver: Is now Online.');
-
-    // 2. User signs up
-    console.log('User: Navigating to login...');
-    await userPage.goto('http://localhost:3000/login');
-    await userPage.click('text="Sign Up"');
-    
-    const userEmail = `user_${Date.now()}@test.com`;
-    await userPage.fill('input[placeholder="Full Name"]', 'Test User');
-    await userPage.fill('input[type="email"]', userEmail);
-    await userPage.fill('input[placeholder="Password (min 8 chars, 1 uppercase, 1 number)"]', 'Password123');
-    await userPage.click('button:has-text("Create Account")');
-    
-    // Select Normal User Role
-    await userPage.waitForSelector('text="Car Owner"');
-    await userPage.click('text="Car Owner"');
-    
-    // Fill out User Onboarding
-    await userPage.fill('input[placeholder="e.g. Toyota"]', 'Honda');
-    await userPage.fill('input[placeholder="e.g. Corolla"]', 'Civic');
-    await userPage.fill('input[placeholder="e.g. 2022"]', '2020');
-    await userPage.selectOption('select', 'Sedan');
-    await userPage.click('button:has-text("Complete Setup")');
-    
-    console.log('User: Successfully logged in and on Dashboard.');
-    
-    // 3. User requests a winch
-    console.log('User: Requesting Winch...');
-    await userPage.click('button:has-text("Request Winch")');
-    
-    // Wait for the simulated negotiation
-    await userPage.waitForSelector('text="Looking for nearby drivers..."');
-    console.log('User: Searching for drivers...');
-    
-    // Wait for offer to appear
-    await userPage.waitForSelector('text="Accept Offer"');
-    console.log('User: Found a driver offer. Accepting...');
-    await userPage.click('button:has-text("Accept Offer")');
-
-    // 4. Map View should appear for User
-    console.log('User: Verifying Live Map appears...');
-    await userPage.waitForSelector('text="Live Tracking"', { timeout: 5000 });
-    console.log('✅ User: Live Map is successfully visible!');
-
-    // 5. Driver accepts request and Map View should appear
-    console.log('Driver: Accepting the active request...');
-    await driverPage.waitForSelector('button:has-text("Accept")');
-    
-    // Handle the alert that pops up when driver accepts
-    driverPage.on('dialog', async dialog => {
-      console.log(`Driver: Dismissing alert -> "${dialog.message()}"`);
-      await dialog.accept();
+    const regDriver = await fetch('http://127.0.0.1:5001/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Super Towing',
+        email: driverEmail,
+        password: password,
+        role: 'WINCH_DRIVER'
+      })
     });
-    
+    if (!regDriver.ok) {
+      throw new Error(`Driver registration failed: ${await regDriver.text()}`);
+    }
+    console.log(`Driver registered: ${driverEmail}`);
+
+    const regUser = await fetch('http://127.0.0.1:5001/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Stuck Customer',
+        email: userEmail,
+        password: password,
+        role: 'USER'
+      })
+    });
+    if (!regUser.ok) {
+      throw new Error(`User registration failed: ${await regUser.text()}`);
+    }
+    console.log(`User registered: ${userEmail}`);
+
+    // 2. Driver Log In
+    console.log('Driver: Logging in...');
+    await driverPage.goto('http://localhost:3000/login');
+    await driverPage.fill('input[type="email"]', driverEmail);
+    await driverPage.fill('input[type="password"]', password);
+    await driverPage.click('button:has-text("Sign In")');
+
+    await driverPage.waitForSelector('h2:has-text("Winch Command")', { timeout: 10000 });
+    console.log('Driver: Successfully logged in.');
+
+    // Go Online
+    await driverPage.locator('div').filter({ has: driverPage.locator('text=Offline') }).locator('.w-14.h-8').click();
+    await driverPage.waitForSelector('text=Online', { timeout: 10000 });
+    console.log('Driver: Went Online.');
+
+    // 3. User Log In
+    console.log('User: Logging in...');
+    await userPage.goto('http://localhost:3000/login');
+    await userPage.fill('input[type="email"]', userEmail);
+    await userPage.fill('input[type="password"]', password);
+    await userPage.click('button:has-text("Sign In")');
+
+    await userPage.waitForSelector('text=Core Services', { timeout: 10000 });
+    console.log('User: Successfully logged in.');
+
+    // 4. Request Winch
+    console.log('User: Accessing Winch Service...');
+    await userPage.click('text=Winch');
+    await userPage.waitForSelector('h3:has-text("Request Winch")', { timeout: 10000 });
+
+    // Select locations
+    console.log('User: Selecting pickup and dropoff points...');
+    await userPage.click('button[aria-label="Auto-detect current location"]');
+    await userPage.click('text=Dropoff Location');
+    await userPage.click('button[aria-label="Auto-detect current location"]');
+
+    console.log('User: Finding Winch Drivers...');
+    await userPage.click('button:has-text("Find Winch Drivers")');
+
+    // Wait for driver to appear
+    await userPage.waitForSelector('text=Super Towing', { timeout: 10000 });
+    console.log('User: Driver offer found. Accepting...');
+    await userPage.click('button:has-text("Accept")');
+
+    // 5. Driver Accepts Request
+    console.log('Driver: Waiting for incoming request...');
+    await driverPage.waitForSelector('text=Stuck Customer', { timeout: 15000 });
+    console.log('Driver: Accept request...');
     await driverPage.click('button:has-text("Accept")');
-    
-    console.log('Driver: Verifying Live Navigation map appears...');
-    await driverPage.waitForSelector('text="Live Navigation"', { timeout: 5000 });
-    console.log('✅ Driver: Live Map is successfully visible!');
-    
-    console.log('🎉 E2E Navigation Test Passed Successfully!');
+
+    // 6. Verify tracking screen
+    console.log('Verifying Live Navigation & Live Tracking map screens...');
+    await driverPage.waitForSelector('h2:has-text("Live Navigation")', { timeout: 15000 });
+    await userPage.waitForSelector('h2:has-text("Live Tracking")', { timeout: 15000 });
+    console.log('✅ Success: Live map and route coordinates tracking is fully active!');
+
+    // 7. Complete job
+    console.log('Driver: Arriving and completing job...');
+    await driverPage.click('button:has-text("Arrived / Complete")');
+
+    await driverPage.waitForSelector('h2:has-text("Winch Command")', { timeout: 15000 });
+    await userPage.waitForSelector('text=Core Services', { timeout: 15000 });
+    console.log('🎉 test-map E2E Navigation Test Passed Successfully!');
   } catch (error) {
     console.error('❌ E2E Test Failed:', error);
   } finally {

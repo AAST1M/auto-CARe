@@ -55,16 +55,47 @@ export function setupSocket(io: Server) {
       socket.leave('admin_room');
     });
 
+    // ── Workshop owner joins their workshop room ───────────────────────────────
+    socket.on('join_workshop_room', (workshopId: string) => {
+      if (workshopId) {
+        socket.join(`workshop_${workshopId}`);
+        console.log(`🔧 Workshop owner joined room: workshop_${workshopId}`);
+      }
+    });
+
+    socket.on('leave_workshop_room', (workshopId: string) => {
+      if (workshopId) socket.leave(`workshop_${workshopId}`);
+    });
+
     // Register user's socket
     socket.on('register_user', (userId: string) => {
       userSockets.set(userId, socket.id);
     });
 
     // ── Driver goes ONLINE ────────────────────────────────────────────────────
-    socket.on('driver_online', (data: { driverId: string; driverName: string; vehicle: string; price: number, lat?: number, lng?: number }) => {
-      onlineDrivers.set(socket.id, { ...data, socketId: socket.id });
-      io.emit('drivers_updated', Array.from(onlineDrivers.values()));
-      console.log(`✅ Driver ${data.driverName} is ONLINE`);
+    socket.on('driver_online', async (data: { driverId: string; driverName: string; vehicle: string; price: number, lat?: number, lng?: number }) => {
+      try {
+        const user = await prisma.user.findUnique({ where: { id: data.driverId } });
+        if (!user || user.approvalStatus !== 'APPROVED') {
+          socket.emit('driver_error', { message: 'Your account is pending admin approval or has been rejected.' });
+          return;
+        }
+        // ─── Block if commission is owed ───────────────────────────────────
+        if (user.commissionOwed > 0) {
+          socket.emit('driver_error', {
+            message: `You have an unpaid commission of ${user.commissionOwed.toFixed(2)} EGP. Please pay it via your wallet before going online.`,
+            code: 'COMMISSION_DEBT',
+            commissionOwed: user.commissionOwed
+          });
+          return;
+        }
+        // ──────────────────────────────────────────────────────────────────
+        onlineDrivers.set(socket.id, { ...data, socketId: socket.id });
+        io.emit('drivers_updated', Array.from(onlineDrivers.values()));
+        console.log(`✅ Driver ${data.driverName} is ONLINE`);
+      } catch (err) {
+        console.error('Error going online:', err);
+      }
     });
 
     // ── Driver goes OFFLINE ───────────────────────────────────────────────────
@@ -74,7 +105,20 @@ export function setupSocket(io: Server) {
     });
 
     // ── Get current online drivers (on demand) ────────────────────────────────
-    socket.on('get_drivers', () => {
+    socket.on('get_drivers', async () => {
+      try {
+        const driversList = Array.from(onlineDrivers.entries());
+        for (const [sid, d] of driversList) {
+          if (d && d.driverId) {
+            const userExists = await prisma.user.findUnique({ where: { id: d.driverId } });
+            if (!userExists) {
+              onlineDrivers.delete(sid);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error validating online drivers:', err);
+      }
       socket.emit('drivers_updated', Array.from(onlineDrivers.values()));
     });
 
@@ -252,28 +296,21 @@ export function setupSocket(io: Server) {
           });
 
           const commission = booking.price * 0.10; // 10% platform fee
-          const driverEarning = booking.price - commission;
 
-          // Deduct from User wallet
-          await tx.user.update({
-            where: { id: booking.userId },
-            data: { walletBalance: { decrement: booking.price } }
-          });
-
-          // Add to Driver wallet
+          // Add commission debt to Driver
           await tx.user.update({
             where: { id: booking.driverId },
-            data: { walletBalance: { increment: driverEarning } }
+            data: { commissionOwed: { increment: commission } }
           });
 
-          // Create Transaction record
+          // Create Transaction record for cash ride
           await tx.transaction.create({
             data: {
               userId: booking.userId,
               providerId: booking.driverId,
               amount: booking.price,
               commission: commission,
-              type: 'Winch Ride',
+              type: 'Winch Ride - Cash',
               status: 'Completed'
             }
           });

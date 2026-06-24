@@ -27,3 +27,8 @@ dist-ssr
 lcov.info
 coverage/
 frontend/.env
+
+# Test reports and results
+playwright-report/
+frontend/playwright-report/
+test-results/

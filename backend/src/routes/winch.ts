@@ -15,9 +15,24 @@ router.get('/offers', async (req, res) => {
 });
 
 // Create a winch offer (WINCH_DRIVER only)
+// Blocked if driver has unpaid commission
 router.post('/offers', authenticateToken, requireRole('WINCH_DRIVER'), async (req: any, res) => {
   try {
     const { driverName, price, eta, vehicle } = req.body;
+
+    // ─── Commission Debt Check ─────────────────────────────────────────────
+    const driver = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { commissionOwed: true }
+    });
+    if (driver && driver.commissionOwed > 0) {
+      return res.status(403).json({
+        error: `You have an unpaid commission of ${driver.commissionOwed.toFixed(2)} EGP. Please pay it before going online.`,
+        commissionOwed: driver.commissionOwed,
+        code: 'COMMISSION_DEBT'
+      });
+    }
+    // ──────────────────────────────────────────────────────────────────────
 
     if (!driverName || !driverName.trim()) {
       return res.status(400).json({ error: 'Driver name is required' });
@@ -47,7 +62,7 @@ router.post('/offers', authenticateToken, requireRole('WINCH_DRIVER'), async (re
   }
 });
 
-// Create a winch booking (when user accepts offer) — authenticated users only
+// ─── POST /api/winch/bookings — Electronic/wallet payment ride ────────────────
 router.post('/bookings', authenticateToken, async (req: any, res) => {
   try {
     const { driverId, driverName, price, vehicle } = req.body;
@@ -77,18 +92,30 @@ router.post('/bookings', authenticateToken, async (req: any, res) => {
       return res.status(402).json({ error: 'Insufficient funds. Please top up your wallet.' });
     }
 
-    // Process Transaction
+    // Process Transaction — deduct from customer, give 90% to driver
     await prisma.$transaction(async (tx) => {
-      // Deduct full amount
+      // Deduct full amount from customer
       await tx.user.update({
         where: { id: user.id },
         data: { walletBalance: { decrement: parsedPrice } }
       });
 
-      // Add 90% to winch driver
+      // Add 90% to winch driver (10% is platform commission, auto-collected)
       await tx.user.update({
         where: { id: driverId },
         data: { walletBalance: { increment: parsedPrice * 0.9 } }
+      });
+
+      // Record platform commission transaction
+      await tx.transaction.create({
+        data: {
+          userId: user.id,
+          providerId: driverId,
+          amount: parsedPrice,
+          commission: parsedPrice * 0.1,
+          type: 'Winch Ride',
+          status: 'Completed'
+        }
       });
     });
 
@@ -103,6 +130,91 @@ router.post('/bookings', authenticateToken, async (req: any, res) => {
       }
     });
     res.json(booking);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── POST /api/winch/bookings/cash — Cash payment ride ───────────────────────
+// Customer paid cash directly to driver. Platform records the commission debt.
+router.post('/bookings/cash', authenticateToken, async (req: any, res) => {
+  try {
+    const { driverId, driverName, price, vehicle } = req.body;
+
+    if (!driverId || !driverId.trim()) {
+      return res.status(400).json({ error: 'Driver ID is required' });
+    }
+    if (!driverName || !driverName.trim()) {
+      return res.status(400).json({ error: 'Driver name is required' });
+    }
+    if (!price || isNaN(Number(price)) || Number(price) <= 0) {
+      return res.status(400).json({ error: 'A valid price is required' });
+    }
+    if (!vehicle || !vehicle.trim()) {
+      return res.status(400).json({ error: 'Vehicle type is required' });
+    }
+
+    const parsedPrice = parseFloat(price);
+    const commissionAmount = parseFloat((parsedPrice * 0.1).toFixed(2));
+
+    // Record cash booking and add commission debt to driver
+    const [booking] = await prisma.$transaction(async (tx) => {
+      const newBooking = await tx.winchBooking.create({
+        data: {
+          userId: req.user!.id,
+          driverId: driverId.trim(),
+          driverName: driverName.trim(),
+          price: parsedPrice,
+          vehicle: vehicle.trim(),
+          status: 'Completed'
+        }
+      });
+
+      // Increment commission owed on driver
+      await tx.user.update({
+        where: { id: driverId },
+        data: { commissionOwed: { increment: commissionAmount } }
+      });
+
+      // Record the pending commission transaction
+      await tx.transaction.create({
+        data: {
+          userId: req.user!.id,
+          providerId: driverId,
+          amount: parsedPrice,
+          commission: commissionAmount,
+          type: 'Winch Ride (Cash)',
+          status: 'Commission Pending'
+        }
+      });
+
+      return [newBooking];
+    });
+
+    res.json({
+      ...booking,
+      commissionCharged: commissionAmount,
+      message: `Cash ride recorded. Driver owes ${commissionAmount} EGP in platform commission.`
+    });
+  } catch (error) {
+    console.error('Cash booking error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── GET /api/winch/commission-status — Driver checks own commission debt ─────
+router.get('/commission-status', authenticateToken, requireRole('WINCH_DRIVER'), async (req: any, res) => {
+  try {
+    const driver = await prisma.user.findUnique({
+      where: { id: req.user!.id },
+      select: { commissionOwed: true, walletBalance: true }
+    });
+    if (!driver) return res.status(404).json({ error: 'Driver not found' });
+    res.json({
+      commissionOwed: driver.commissionOwed,
+      walletBalance: driver.walletBalance,
+      canGoOnline: driver.commissionOwed <= 0
+    });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -185,6 +297,30 @@ router.get('/location/:id', authenticateToken, async (req: any, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get winch booking history
+router.get('/history', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const role = req.user!.role;
+    
+    let whereClause = {};
+    if (role === 'WINCH_DRIVER') {
+      whereClause = { driverId: userId };
+    } else {
+      whereClause = { userId: userId };
+    }
+
+    const bookings = await prisma.winchBooking.findMany({
+      where: whereClause,
+      orderBy: { createdAt: 'desc' }
+    });
+    
+    res.json(bookings);
+  } catch (error) {
+    res.status(500).json({ error: 'Server error fetching history' });
   }
 });
 

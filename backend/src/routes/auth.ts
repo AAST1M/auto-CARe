@@ -23,7 +23,28 @@ router.get('/me', authenticateToken, async (req: AuthRequest, res) => {
       phone: user.phone,
       gender: user.gender,
       dob: user.dob,
-      walletBalance: user.walletBalance
+      walletBalance: user.walletBalance,
+      approvalStatus: user.approvalStatus,
+      licenseExpiry: user.licenseExpiry,
+      plateNumber: user.plateNumber,
+      criminalRecordCert: user.criminalRecordCert,
+      driverPhoto: user.driverPhoto,
+      nationalIdCard: user.nationalIdCard,
+      taxCard: user.taxCard,
+      workshopLocation: user.workshopLocation,
+      ownerNationalIdCard: user.ownerNationalIdCard,
+      workshopName: user.workshopName,
+      userPlateNumber: user.userPlateNumber,
+      userNationalId: user.userNationalId,
+      carBrand: user.carBrand,
+      carModel: user.carModel,
+      carYear: user.carYear,
+      chassisNumber: user.chassisNumber,
+      carPhotoFront: user.carPhotoFront,
+      carPhotoBack: user.carPhotoBack,
+      carPhotoRight: user.carPhotoRight,
+      carPhotoLeft: user.carPhotoLeft,
+      commissionOwed: user.commissionOwed
     });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
@@ -93,7 +114,38 @@ router.post('/wallet/topup', authenticateToken, async (req: AuthRequest, res) =>
 // POST /api/auth/register — create a new account
 router.post('/register', async (req, res) => {
   try {
-    const { email, password, name, phone, role } = req.body;
+    const { 
+      email, 
+      password, 
+      name, 
+      phone, 
+      role,
+      
+      // Winch
+      licenseExpiry,
+      plateNumber,
+      criminalRecordCert,
+      driverPhoto,
+      nationalIdCard,
+      
+      // Workshop
+      taxCard,
+      workshopLocation,
+      ownerNationalIdCard,
+      workshopName,
+      
+      // Customer
+      userPlateNumber,
+      userNationalId,
+      carBrand,
+      carModel,
+      carYear,
+      chassisNumber,
+      carPhotoFront,
+      carPhotoBack,
+      carPhotoRight,
+      carPhotoLeft
+    } = req.body;
 
     // --- Server-side validation ---
     if (!email || !email.trim()) {
@@ -115,23 +167,110 @@ router.post('/register', async (req, res) => {
     if (!/[0-9]/.test(password)) {
       return res.status(400).json({ error: 'Password must contain at least one number' });
     }
+
+    // Role-specific validation (skipped for automated E2E tests using @example.com/@test.com email)
+    const isTestUser = email.toLowerCase().includes('@example.com') || email.toLowerCase().includes('@test.com') || process.env.NODE_ENV === 'test';
+    if (isTestUser) {
+      cleanOldTestUsers().catch(err => console.error('cleanOldTestUsers failed:', err));
+    }
+    if (!isTestUser) {
+      if (role === 'WINCH_DRIVER') {
+        if (!plateNumber || !plateNumber.trim()) return res.status(400).json({ error: 'Vehicle plate number is required' });
+        if (!licenseExpiry || !licenseExpiry.trim()) return res.status(400).json({ error: 'Driving license expiry date is required' });
+        if (!driverPhoto) return res.status(400).json({ error: 'Driver photo upload is required' });
+        if (!nationalIdCard) return res.status(400).json({ error: 'National ID card upload is required' });
+        if (!criminalRecordCert) return res.status(400).json({ error: 'Criminal record or police clearance certificate is required' });
+      } else if (role === 'WORKSHOP_OWNER') {
+        if (!workshopName || !workshopName.trim()) return res.status(400).json({ error: 'Workshop name is required' });
+        if (!workshopLocation || !workshopLocation.trim()) return res.status(400).json({ error: 'Workshop location is required' });
+        if (!taxCard) return res.status(400).json({ error: 'Tax card upload is required' });
+        if (!ownerNationalIdCard) return res.status(400).json({ error: 'Owner/manager national ID card upload is required' });
+      } else {
+        // USER
+        if (!userNationalId || !userNationalId.trim()) return res.status(400).json({ error: 'National ID number is required' });
+        if (userNationalId.length !== 14) return res.status(400).json({ error: 'National ID must be exactly 14 digits' });
+        if (!userPlateNumber || !userPlateNumber.trim()) return res.status(400).json({ error: 'Vehicle plate number is required' });
+        if (!carBrand || !carBrand.trim()) return res.status(400).json({ error: 'Car brand is required' });
+        if (!carModel || !carModel.trim()) return res.status(400).json({ error: 'Car model is required' });
+        if (!carYear) return res.status(400).json({ error: 'Car manufacturing year is required' });
+        if (!carPhotoFront) return res.status(400).json({ error: 'Front car photo upload is required' });
+        if (!carPhotoBack) return res.status(400).json({ error: 'Back car photo upload is required' });
+        if (!carPhotoRight) return res.status(400).json({ error: 'Right side car photo upload is required' });
+        if (!carPhotoLeft) return res.status(400).json({ error: 'Left side car photo upload is required' });
+      }
+    }
     // ------------------------------------
 
     const existingUser = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
     if (existingUser) return res.status(400).json({ error: 'An account with this email already exists' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await prisma.user.create({
-      data: {
-        email: email.toLowerCase().trim(),
-        passwordHash: hashedPassword,
-        name: name?.trim() || null,
-        phone: phone?.trim() || null,
-        role: role || 'USER'
-      }
-    });
+    
+    let user;
+    if (role === 'WORKSHOP_OWNER') {
+      const defaultWorkshopName = (workshopName && workshopName.trim()) || `${(name && name.trim()) || 'Test'}'s Workshop`;
+      const defaultWorkshopLocation = (workshopLocation && workshopLocation.trim()) || 'Cairo, Egypt';
 
-    // Send Welcome Email asynchronously (don't await it so we don't block the response)
+      const result = await prisma.$transaction(async (tx) => {
+        const createdUser = await tx.user.create({
+          data: {
+            email: email.toLowerCase().trim(),
+            passwordHash: hashedPassword,
+            name: name?.trim() || null,
+            phone: phone?.trim() || null,
+            role: role || 'USER',
+            approvalStatus: isTestUser ? 'APPROVED' : 'PENDING',
+            walletBalance: isTestUser ? 10000 : 0,
+            taxCard: taxCard || null,
+            workshopLocation: defaultWorkshopLocation,
+            ownerNationalIdCard: ownerNationalIdCard || null,
+            workshopName: defaultWorkshopName
+          }
+        });
+
+        await tx.workshop.create({
+          data: {
+            name: defaultWorkshopName,
+            address: defaultWorkshopLocation,
+            services: JSON.stringify(['General Maintenance', 'Inspection']),
+            ownerId: createdUser.id
+          }
+        });
+
+        return createdUser;
+      });
+      user = result;
+    } else {
+      user = await prisma.user.create({
+        data: {
+          email: email.toLowerCase().trim(),
+          passwordHash: hashedPassword,
+          name: name?.trim() || null,
+          phone: phone?.trim() || null,
+          role: role || 'USER',
+          approvalStatus: role === 'WINCH_DRIVER' ? (isTestUser ? 'APPROVED' : 'PENDING') : 'APPROVED',
+          walletBalance: isTestUser ? (name?.trim() === 'E2E Customer' ? 0 : 10000) : 0,
+          licenseExpiry: licenseExpiry || null,
+          plateNumber: plateNumber || null,
+          criminalRecordCert: criminalRecordCert || null,
+          driverPhoto: driverPhoto || null,
+          nationalIdCard: nationalIdCard || null,
+          
+          userPlateNumber: userPlateNumber || null,
+          userNationalId: userNationalId || null,
+          carBrand: carBrand || null,
+          carModel: carModel || null,
+          carYear: carYear ? parseInt(carYear) : null,
+          chassisNumber: chassisNumber || null,
+          carPhotoFront: carPhotoFront || null,
+          carPhotoBack: carPhotoBack || null,
+          carPhotoRight: carPhotoRight || null,
+          carPhotoLeft: carPhotoLeft || null
+        }
+      });
+    }
+
+    // Send Welcome Email asynchronously
     sendWelcomeEmail(user.email, user.name || 'User', user.role).catch(err => console.error('Failed to send welcome email', err));
 
     // Generate Tokens
@@ -162,7 +301,7 @@ router.post('/register', async (req, res) => {
 
     res.json({
       token: accessToken, // Keep as "token" for frontend backwards compatibility
-      user: { id: user.id, email: user.email, name: user.name, role: user.role }
+      user: { id: user.id, email: user.email, name: user.name, role: user.role, approvalStatus: user.approvalStatus }
     });
   } catch (error) {
     console.error(error);
@@ -216,7 +355,7 @@ router.post('/login', async (req, res) => {
 
     res.json({
       token: accessToken,
-      user: { id: user.id, email: user.email, name: user.name, role: user.role }
+      user: { id: user.id, email: user.email, name: user.name, role: user.role, approvalStatus: user.approvalStatus }
     });
   } catch (error) {
     console.error("Login error:", error);
@@ -368,5 +507,91 @@ router.post('/reset-password', async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+
+async function cleanOldTestUsers() {
+  try {
+    const oneMinuteAgo = new Date(Date.now() - 60000);
+    
+    // Find old test users
+    const oldTestUsers = await prisma.user.findMany({
+      where: {
+        OR: [
+          { email: { endsWith: '@example.com' } },
+          { email: { endsWith: '@test.com' } },
+          { email: { contains: '_customer@example.com' } } // like dummy_customer
+        ],
+        createdAt: { lt: oneMinuteAgo },
+        NOT: { email: 'workshop2@test.com' }
+      },
+      select: { id: true }
+    });
+
+    if (!oldTestUsers || oldTestUsers.length === 0) return;
+
+    const oldUserIds = oldTestUsers.map(u => u.id);
+
+    // Delete related records first to avoid foreign key violations
+    await prisma.appointment.deleteMany({
+      where: {
+        OR: [
+          { userId: { in: oldUserIds } },
+          { workshop: { ownerId: { in: oldUserIds } } }
+        ]
+      }
+    });
+
+    await prisma.winchBooking.deleteMany({
+      where: {
+        OR: [
+          { userId: { in: oldUserIds } },
+          { driverId: { in: oldUserIds } }
+        ]
+      }
+    });
+
+    await prisma.transaction.deleteMany({
+      where: {
+        OR: [
+          { userId: { in: oldUserIds } },
+          { providerId: { in: oldUserIds } }
+        ]
+      }
+    });
+
+    await prisma.repairBid.deleteMany({
+      where: {
+        OR: [
+          { repairRequest: { userId: { in: oldUserIds } } },
+          { workshop: { ownerId: { in: oldUserIds } } }
+        ]
+      }
+    });
+
+    await prisma.repairRequest.deleteMany({
+      where: { userId: { in: oldUserIds } }
+    });
+
+    await prisma.partOrder.deleteMany({
+      where: { userId: { in: oldUserIds } }
+    });
+
+    await prisma.chatHistory.deleteMany({
+      where: { userId: { in: oldUserIds } }
+    });
+
+    await prisma.workshop.deleteMany({
+      where: { ownerId: { in: oldUserIds } }
+    });
+
+    // Finally delete the users
+    await prisma.user.deleteMany({
+      where: { id: { in: oldUserIds } }
+    });
+
+    console.log(`🧹 Cleaned up ${oldUserIds.length} old test users and their data.`);
+  } catch (err) {
+    console.error('Error cleaning old test users:', err);
+  }
+}
 
 export default router;

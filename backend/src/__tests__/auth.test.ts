@@ -5,6 +5,11 @@ import { prismaMock } from './setup';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 
+jest.mock('../utils/mailer', () => ({
+  sendWelcomeEmail: jest.fn().mockResolvedValue(true),
+  sendPasswordResetEmail: jest.fn().mockResolvedValue(true)
+}));
+
 const app = express();
 app.use(express.json());
 app.use('/api/auth', authRoutes);
@@ -33,7 +38,7 @@ describe('Auth Routes', () => {
         resetToken: null,
         resetTokenExpiry: null,
         refreshToken: null
-      });
+      } as any);
 
       const res = await request(app)
         .post('/api/auth/register')
@@ -60,14 +65,14 @@ describe('Auth Routes', () => {
         resetToken: null,
         resetTokenExpiry: null,
         refreshToken: null
-      });
+      } as any);
 
       const res = await request(app)
         .post('/api/auth/register')
-        .send({ email: 'test@example.com', password: 'password123', name: 'Test User', phone: '1234567890' });
+        .send({ email: 'test@example.com', password: 'Password123!', name: 'Test User', phone: '1234567890' });
 
       expect(res.statusCode).toEqual(400);
-      expect(res.body.error).toEqual('Email already exists');
+      expect(res.body.error).toEqual('An account with this email already exists');
     });
   });
 
@@ -80,7 +85,7 @@ describe('Auth Routes', () => {
         .send({ email: 'wrong@example.com', password: 'Password123' });
 
       expect(res.statusCode).toEqual(400);
-      expect(res.body.error).toEqual('Invalid credentials');
+      expect(res.body.error).toEqual('Invalid email or password');
     });
   });
 });

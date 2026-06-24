@@ -102,6 +102,7 @@ async function main() {
   await prisma.winchBooking.create({
     data: {
       userId: customer.id,
+      driverId: driver.id,
       driverName: 'Sherif Winch',
       vehicle: 'Flatbed Heavy-Duty',
       price: 600.0,
@@ -112,6 +113,7 @@ async function main() {
   await prisma.winchBooking.create({
     data: {
       userId: customer.id,
+      driverId: driver.id,
       driverName: 'Kareem Tow',
       vehicle: 'Wheel-Lift Lite',
       price: 350.0,

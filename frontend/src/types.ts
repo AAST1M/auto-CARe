@@ -107,24 +107,41 @@ export interface UserProfile {
   dob: string;
   role: UserRole | null;
   walletBalance: number; // For Drivers/Owners
+  approvalStatus?: string;
   
-  // User Specific
+  // User/Customer Specific
   carBrand?: string;
   carModel?: string;
-  carYear?: string;
+  carYear?: string | number;
   carType?: string;
+  userPlateNumber?: string;
+  userNationalId?: string;
+  chassisNumber?: string;
+  carPhotoFront?: string;
+  carPhotoBack?: string;
+  carPhotoRight?: string;
+  carPhotoLeft?: string;
   bookings: UserBooking[];
 
   // Winch Specific
   winchPlateNumber?: string;
   driverLicense?: string;
   vehicleType?: string;
+  licenseExpiry?: string;
+  plateNumber?: string;
+  criminalRecordCert?: string;
+  driverPhoto?: string;
+  nationalIdCard?: string;
 
   // Workshop Specific
   shopName?: string;
   shopLocation?: string;
   govLicense?: string;
   sparePartsBrands?: string;
+  taxCard?: string;
+  workshopLocation?: string;
+  ownerNationalIdCard?: string;
+  workshopName?: string;
 }
 
 export interface WinchBooking {
@@ -147,6 +164,9 @@ export interface SparePart {
   image?: string;
   workshopId?: string;
   workshop?: { name: string };
+  compatibilityModel?: string;
+  compatibilityYearStart?: number;
+  compatibilityYearEnd?: number;
   createdAt: string;
 }
 
