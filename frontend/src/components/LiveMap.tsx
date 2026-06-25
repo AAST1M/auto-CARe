@@ -1,227 +1,98 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { GoogleMap, useJsApiLoader, Marker, DirectionsRenderer } from '@react-google-maps/api';
+import React, { useEffect, useState } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
 
-const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || '';
-const LIBRARIES: ('places' | 'geometry')[] = ['places', 'geometry'];
+import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
+import iconUrl from 'leaflet/dist/images/marker-icon.png';
+import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
 
-const MAP_CONTAINER_STYLE = { width: '100%', height: '100%' };
-const DEFAULT_CENTER = { lat: 30.0444, lng: 31.2357 }; // Cairo fallback
+// Fix for default marker icons in Leaflet with Webpack/Vite
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl,
+  iconUrl,
+  shadowUrl,
+});
 
-// Custom Google Maps style — dark/modern look
-const MAP_STYLE: google.maps.MapTypeStyle[] = [
-  { elementType: 'geometry', stylers: [{ color: '#1d2c4d' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#8ec3b9' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#1a3646' }] },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#304a7d' }] },
-  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#255763' }] },
-  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#2c6675' }] },
-  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#255763' }] },
-  { featureType: 'road.highway', elementType: 'labels.text.fill', stylers: [{ color: '#b0d5ce' }] },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0e1626' }] },
-  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#4e6d70' }] },
-  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-];
+// Custom icons
+const userIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
 
-const USER_MARKER_ICON = (loaded: boolean): google.maps.Icon | undefined => {
-  if (!loaded || typeof google === 'undefined') return undefined;
-  return {
-    url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 42" width="32" height="42">
-  <defs>
-    <linearGradient id="userGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#3b82f6" />
-      <stop offset="100%" stop-color="#1d4ed8" />
-    </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="3" stdDeviation="2" flood-opacity="0.3"/>
-    </filter>
-  </defs>
-  <path d="M16 2C8.2 2 2 8.2 2 16c0 10.5 12.8 23.5 13.3 24.1.4.4 1 .4 1.4 0C17.2 39.5 30 26.5 30 16 30 8.2 23.8 2 16 2z" fill="url(#userGrad)" stroke="#ffffff" stroke-width="2" filter="url(#shadow)" />
-  <circle cx="16" cy="16" r="8" fill="#ffffff" />
-  <text x="16" y="20.5" font-family="system-ui, -apple-system, BlinkMacSystemFont, sans-serif" font-size="12" font-weight="900" fill="#1d4ed8" text-anchor="middle">U</text>
-</svg>
-`)}`,
-    scaledSize: new google.maps.Size(40, 52),
-    anchor: new google.maps.Point(20, 52),
-  };
-};
-
-const DRIVER_MARKER_ICON = (loaded: boolean): google.maps.Icon | undefined => {
-  if (!loaded || typeof google === 'undefined') return undefined;
-  return {
-    url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40">
-  <defs>
-    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="3" stdDeviation="2.5" flood-color="#d97706" flood-opacity="0.4"/>
-    </filter>
-  </defs>
-  <circle cx="20" cy="20" r="16" fill="#ffffff" stroke="#f59e0b" stroke-width="3" filter="url(#glow)" />
-  <circle cx="20" cy="20" r="12" fill="#d97706" />
-  <path d="M14 15h4.5l2 2.5h4c.6 0 1 .4 1 1v4.5c0 .3-.2.5-.5.5H23.5c-.3-1.2-1.3-2-2.5-2s-2.2.8-2.5 2H13.5c-.3 0-.5-.2-.5-.5v-5c0-.6.4-1 1-1zm3.5 8c0-.6-.4-1-1-1s-1 .4-1 1 .4 1 1 1 1-.4 1-1zm8 0c0-.6-.4-1-1-1s-1 .4-1 1 .4 1 1 1 1-.4 1-1z" fill="#ffffff" />
-</svg>
-`)}`,
-    scaledSize: new google.maps.Size(44, 44),
-    anchor: new google.maps.Point(22, 22),
-  };
-};
+const driverIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
 
 interface LiveMapProps {
   userLat?: number;
   userLng?: number;
   driverLat?: number;
   driverLng?: number;
-  mapTypeId?: string;
-  zoom?: number;
-  onZoomChange?: (zoom: number) => void;
-  onMapLoadExternal?: (map: google.maps.Map) => void;
 }
 
-export const LiveMap: React.FC<LiveMapProps> = ({ userLat, userLng, driverLat, driverLng, mapTypeId = 'roadmap', zoom = 14, onZoomChange, onMapLoadExternal }) => {
-  const { isLoaded, loadError } = useJsApiLoader({
-    googleMapsApiKey: GOOGLE_MAPS_KEY,
-    libraries: LIBRARIES,
-  });
+// Helper component to auto-fit bounds when coordinates change
+const AutoFitBounds = ({ userLat, userLng, driverLat, driverLng }: LiveMapProps) => {
+  const map = useMap();
 
-  const mapRef = useRef<google.maps.Map | null>(null);
-  const [directions, setDirections] = useState<google.maps.DirectionsResult | null>(null);
-
-  const onMapLoad = useCallback((map: google.maps.Map) => {
-    mapRef.current = map;
-  }, []);
-
-  // Fetch driving directions whenever both pins are available
   useEffect(() => {
-    if (!isLoaded || !userLat || !userLng || !driverLat || !driverLng) return;
+    const bounds: [number, number][] = [];
+    if (userLat && userLng) bounds.push([userLat, userLng]);
+    if (driverLat && driverLng) bounds.push([driverLat, driverLng]);
 
-    const directionsService = new google.maps.DirectionsService();
-    directionsService.route(
-      {
-        origin: { lat: driverLat, lng: driverLng },
-        destination: { lat: userLat, lng: userLng },
-        travelMode: google.maps.TravelMode.DRIVING,
-      },
-      (result, status) => {
-        if (status === google.maps.DirectionsStatus.OK && result) {
-          setDirections(result);
-        } else {
-          setDirections(null);
-        }
-      }
-    );
-  }, [isLoaded, userLat, userLng, driverLat, driverLng]);
-
-  // Auto-fit bounds when coordinates change
-  useEffect(() => {
-    if (!mapRef.current || !isLoaded) return;
-    const bounds = new google.maps.LatLngBounds();
-    let hasPoints = false;
-    if (userLat && userLng) { bounds.extend({ lat: userLat, lng: userLng }); hasPoints = true; }
-    if (driverLat && driverLng) { bounds.extend({ lat: driverLat, lng: driverLng }); hasPoints = true; }
-    if (hasPoints) {
-      if (userLat && userLng && driverLat && driverLng) {
-        mapRef.current.fitBounds(bounds, { top: 80, bottom: 80, left: 40, right: 40 });
+    if (bounds.length > 0) {
+      if (bounds.length === 1) {
+        map.setView(bounds[0] as [number, number], 14);
       } else {
-        const pt = userLat && userLng ? { lat: userLat, lng: userLng } : { lat: driverLat!, lng: driverLng! };
-        mapRef.current.panTo(pt);
-        mapRef.current.setZoom(15);
+        const leafletBounds = L.latLngBounds(bounds);
+        map.fitBounds(leafletBounds, { padding: [50, 50] });
       }
     }
-  }, [isLoaded, userLat, userLng, driverLat, driverLng]);
+  }, [map, userLat, userLng, driverLat, driverLng]);
 
-  const center = (userLat && userLng)
-    ? { lat: userLat, lng: userLng }
-    : (driverLat && driverLng)
-    ? { lat: driverLat, lng: driverLng }
-    : DEFAULT_CENTER;
+  return null;
+};
 
-  if (loadError) {
-    return (
-      <div className="w-full h-full flex items-center justify-center bg-slate-800 text-white rounded-xl">
-        <div className="text-center p-6">
-          <p className="text-2xl mb-2">🗺️</p>
-          <p className="font-bold">Map unavailable</p>
-          <p className="text-xs text-gray-400 mt-1">Check your Google Maps API key in frontend/.env</p>
-        </div>
-      </div>
-    );
-  }
+export const LiveMap: React.FC<LiveMapProps> = ({ userLat, userLng, driverLat, driverLng }) => {
+  // Default center (Cairo if no coordinates)
+  const defaultCenter: [number, number] = [30.0444, 31.2357];
 
-  if (!isLoaded) {
-    return (
-      <div className="w-full h-full flex items-center justify-center bg-slate-800 rounded-xl">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-4 border-cyber-primary border-t-transparent rounded-full animate-spin" />
-          <p className="text-white text-sm font-medium">Loading Google Maps...</p>
-        </div>
-      </div>
-    );
-  }
+  const center: [number, number] = (userLat && userLng)
+    ? [userLat, userLng]
+    : (driverLat && driverLng) ? [driverLat, driverLng] : defaultCenter;
 
   return (
-    <div className="w-full h-full rounded-xl overflow-hidden shadow-2xl relative">
-      <GoogleMap
-        mapContainerStyle={MAP_CONTAINER_STYLE}
-        center={center}
-        zoom={zoom}
-        mapTypeId={mapTypeId}
-        onLoad={(map) => {
-          onMapLoad(map);
-          if (onMapLoadExternal) onMapLoadExternal(map);
-        }}
-        onZoomChanged={() => {
-          if (mapRef.current && onZoomChange) {
-            const currentZoom = mapRef.current.getZoom();
-            if (currentZoom !== undefined) {
-              onZoomChange(currentZoom);
-            }
-          }
-        }}
-        options={{
-          styles: mapTypeId === 'roadmap' ? MAP_STYLE : [],
-          disableDefaultUI: false,
-          zoomControl: false,
-          fullscreenControl: false,
-          streetViewControl: false,
-          mapTypeControl: false,
-          clickableIcons: false,
-        }}
-      >
-        {/* User location marker (blue) */}
+    <div className="w-full h-full rounded-xl overflow-hidden border border-gray-200 shadow-lg relative z-0">
+      <MapContainer center={center} zoom={13} style={{ width: '100%', height: '100%' }}>
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        />
+
         {userLat && userLng && (
-          <Marker
-            position={{ lat: userLat, lng: userLng }}
-            icon={USER_MARKER_ICON(isLoaded)}
-            title="Your Location"
-            label={{ text: 'You', color: '#fff', fontWeight: 'bold', fontSize: '11px' }}
-          />
+          <Marker position={[userLat, userLng]} icon={userIcon}>
+            <Popup>Your Location</Popup>
+          </Marker>
         )}
 
-        {/* Driver location marker (red truck icon) */}
-        {driverLat && driverLng && !directions && (
-          <Marker
-            position={{ lat: driverLat, lng: driverLng }}
-            icon={DRIVER_MARKER_ICON(isLoaded)}
-            title="Winch Driver"
-          />
+        {driverLat && driverLng && (
+          <Marker position={[driverLat, driverLng]} icon={driverIcon}>
+            <Popup>Winch Driver</Popup>
+          </Marker>
         )}
 
-        {/* Real driving route */}
-        {directions && (
-          <DirectionsRenderer
-            directions={directions}
-            options={{
-              suppressMarkers: false,
-              polylineOptions: {
-                strokeColor: '#0ea5e9',
-                strokeWeight: 5,
-                strokeOpacity: 0.9,
-              },
-            }}
-          />
-        )}
-      </GoogleMap>
+        <AutoFitBounds userLat={userLat} userLng={userLng} driverLat={driverLat} driverLng={driverLng} />
+      </MapContainer>
     </div>
   );
 };
