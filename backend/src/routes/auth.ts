@@ -34,6 +34,8 @@ router.get('/me', authenticateToken, async (req: AuthRequest, res) => {
       workshopLocation: user.workshopLocation,
       ownerNationalIdCard: user.ownerNationalIdCard,
       workshopName: user.workshopName,
+      workshopDescription: user.workshopDescription,
+      workshopPhoto: user.workshopPhoto,
       userPlateNumber: user.userPlateNumber,
       userNationalId: user.userNationalId,
       carBrand: user.carBrand,
@@ -133,6 +135,8 @@ router.post('/register', async (req, res) => {
       workshopLocation,
       ownerNationalIdCard,
       workshopName,
+      workshopDescription,
+      workshopPhoto,
       
       // Customer
       userPlateNumber,
@@ -224,7 +228,9 @@ router.post('/register', async (req, res) => {
             taxCard: taxCard || null,
             workshopLocation: defaultWorkshopLocation,
             ownerNationalIdCard: ownerNationalIdCard || null,
-            workshopName: defaultWorkshopName
+            workshopName: defaultWorkshopName,
+            workshopDescription: workshopDescription || null,
+            workshopPhoto: workshopPhoto || null
           }
         });
 
@@ -233,6 +239,8 @@ router.post('/register', async (req, res) => {
             name: defaultWorkshopName,
             address: defaultWorkshopLocation,
             services: JSON.stringify(['General Maintenance', 'Inspection']),
+            description: workshopDescription || null,
+            image: workshopPhoto || null,
             ownerId: createdUser.id
           }
         });
