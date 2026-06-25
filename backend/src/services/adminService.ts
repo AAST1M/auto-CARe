@@ -73,15 +73,12 @@ export async function getAdminStats() {
 }
 
 export async function getAdminTransactions() {
-  // Fetch all users to map names/emails
-  const allUsers = await prisma.user.findMany({
-    select: { id: true, name: true, email: true }
-  });
-  const userMap = new Map(allUsers.map(u => [u.id, u.name || u.email]));
-
-  // Fetch workshop appointments
+  // Fetch workshop appointments with users
   const appointments = await prisma.appointment.findMany({
     include: {
+      user: {
+        select: { name: true, email: true }
+      },
       workshop: {
         select: { name: true }
       }
@@ -89,8 +86,13 @@ export async function getAdminTransactions() {
     orderBy: { createdAt: 'desc' }
   });
 
-  // Fetch winch bookings
+  // Fetch winch bookings with users
   const winchBookings = await prisma.winchBooking.findMany({
+    include: {
+      user: {
+        select: { name: true, email: true }
+      }
+    },
     orderBy: { createdAt: 'desc' }
   });
 
@@ -99,7 +101,7 @@ export async function getAdminTransactions() {
     id: appt.id,
     type: 'Workshop Booking',
     date: appt.createdAt,
-    customerName: userMap.get(appt.userId) || 'Unknown User',
+    customerName: appt.user ? (appt.user.name || appt.user.email) : 'Unknown User',
     providerName: appt.workshop.name,
     amount: appt.price,
     commission: appt.price * 0.1,
@@ -111,7 +113,7 @@ export async function getAdminTransactions() {
     id: wb.id,
     type: 'Winch Ride',
     date: wb.createdAt,
-    customerName: userMap.get(wb.userId) || 'Unknown User',
+    customerName: wb.user ? (wb.user.name || wb.user.email) : 'Unknown User',
     providerName: wb.driverName,
     amount: wb.price,
     commission: wb.price * 0.1,

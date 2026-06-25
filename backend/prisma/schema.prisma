@@ -61,6 +61,7 @@ model User {
   transactionsAsUser Transaction[] @relation("UserTransactions")
   transactionsAsProvider Transaction[] @relation("ProviderTransactions")
   repairRequests RepairRequest[]
+  winchBookings  WinchBooking[] @relation("WinchBookings")
 }
 
 model Workshop {
@@ -132,6 +133,8 @@ model WinchBooking {
   userLng     Float?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  user        User     @relation("WinchBookings", fields: [userId], references: [id])
 }
 
 model SparePart {
