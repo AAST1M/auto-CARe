@@ -84,6 +84,8 @@ const INITIAL_WINCH_OFFERS: WinchOffer[] = [
   { id: 'w2', driverName: 'Karim Ezzat', price: 280, eta: '25 min', rating: 4.6, vehicle: 'Flatbed' },
 ];
 
+const INITIAL_WINCH_OFFERS_PRICES = new Map(INITIAL_WINCH_OFFERS.map(o => [o.id, o.price]));
+
 
 // Google Maps loader hook shared for negotiation map
 const useGoogleMapsLoader = () => useJsApiLoader({
@@ -1537,23 +1539,43 @@ const App: React.FC = () => {
     const userId = user?.id || authContext.user?.id;
     if (!socket || !userId) return;
     
-    alert(`Counter offer of ${offer.price} EGP sent to driver. Waiting...`);
-    
-    const carName = [user.carYear, user.carBrand, user.carModel].filter(Boolean).join(' ') || 'My Car';
-    
-    socket.emit('request_driver', {
-      customerId: userId,
-      customerName: user.name || authContext.user?.name || 'Customer',
-      driverSocketId: (offer as any).driverSocketId || offer.id,
-      car: carName,
-      issue: `Winch from ${pickupAddress || 'current location'} to ${dropoffAddress || 'destination'} (${tripDistance || 0} km)`,
-      price: offer.price,
-      lat: coords?.lat || 30.0444,
-      lng: coords?.lng || 31.2357,
-      pickupAddress,
-      dropoffAddress,
-      tripDistance
-    });
+    // Simulation: Driver accepts if price is reasonable (e.g. within 10% of original)
+    const originalPrice = INITIAL_WINCH_OFFERS_PRICES.get(offerId) || 300;
+    const willAccept = offer.price >= (originalPrice * 0.9);
+
+    if (willAccept) {
+      setActiveOffers(prev => prev.map(o => {
+        if (o.id === offerId) {
+          return { ...o, status: 'accepted' };
+        }
+        return o;
+      }));
+      alert(`Driver accepted your counter offer of ${offer.price} EGP!`);
+
+      const carName = [user.carYear, user.carBrand, user.carModel].filter(Boolean).join(' ') || 'My Car';
+
+      socket.emit('request_driver', {
+        customerId: userId,
+        customerName: user.name || authContext.user?.name || 'Customer',
+        driverSocketId: (offer as any).driverSocketId || offer.id,
+        car: carName,
+        issue: `Winch from ${pickupAddress || 'current location'} to ${dropoffAddress || 'destination'} (${tripDistance || 0} km)`,
+        price: offer.price,
+        lat: coords?.lat || 30.0444,
+        lng: coords?.lng || 31.2357,
+        pickupAddress,
+        dropoffAddress,
+        tripDistance
+      });
+    } else {
+      setActiveOffers(prev => prev.map(o => {
+        if (o.id === offerId) {
+          return { ...o, status: 'rejected' };
+        }
+        return o;
+      }));
+      alert(`Driver rejected your counter offer of ${offer.price} EGP.`);
+    }
   };
 
   const handleRejectOffer = (offerId: string) => {
