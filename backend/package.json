@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "jest",
-    "test:watch": "jest --watchAll"
+    "test:watch": "jest --watchAll",
+    "build": "tsc"
   },
   "keywords": [],
   "author": "",
@@ -46,6 +47,7 @@
     "prisma": "^6.4.1",
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.11",
+    "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3"
   }
