@@ -276,12 +276,12 @@ router.post('/register', async (req, res) => {
     // Generate Tokens
     const accessToken = jwt.sign(
       { id: user.id, role: user.role },
-      process.env.JWT_SECRET || 'secret',
+      process.env.JWT_SECRET as string,
       { expiresIn: '15m' }
     );
     const refreshToken = jwt.sign(
       { id: user.id },
-      (process.env.JWT_SECRET || 'secret') + '_refresh',
+      process.env.JWT_REFRESH_SECRET as string,
       { expiresIn: '7d' }
     );
 
@@ -330,12 +330,12 @@ router.post('/login', async (req, res) => {
     // Generate Tokens
     const accessToken = jwt.sign(
       { id: user.id, role: user.role },
-      process.env.JWT_SECRET || 'secret',
+      process.env.JWT_SECRET as string,
       { expiresIn: '15m' }
     );
     const refreshToken = jwt.sign(
       { id: user.id },
-      (process.env.JWT_SECRET || 'secret') + '_refresh',
+      process.env.JWT_REFRESH_SECRET as string,
       { expiresIn: '7d' }
     );
 
@@ -370,7 +370,7 @@ router.post('/refresh', async (req, res) => {
     if (!refreshToken) return res.status(401).json({ error: 'No refresh token provided' });
 
     // Verify token
-    jwt.verify(refreshToken, (process.env.JWT_SECRET || 'secret') + '_refresh', async (err: any, decoded: any) => {
+    jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET as string, async (err: any, decoded: any) => {
       if (err) return res.status(403).json({ error: 'Invalid refresh token' });
 
       // Check if user still exists and token matches DB
@@ -382,14 +382,14 @@ router.post('/refresh', async (req, res) => {
       // Issue new access token
       const accessToken = jwt.sign(
         { id: user.id, role: user.role },
-        process.env.JWT_SECRET || 'secret',
+        process.env.JWT_SECRET as string,
         { expiresIn: '15m' }
       );
 
       // (Optional) Issue new refresh token here for rotation
       const newRefreshToken = jwt.sign(
         { id: user.id },
-        (process.env.JWT_SECRET || 'secret') + '_refresh',
+        process.env.JWT_REFRESH_SECRET as string,
         { expiresIn: '7d' }
       );
 

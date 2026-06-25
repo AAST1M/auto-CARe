@@ -17,7 +17,7 @@ app.use('/api/auth', authRoutes);
 describe('Auth Routes', () => {
   beforeAll(() => {
     process.env.JWT_SECRET = 'supersecret_test_key_minimum_32_chars_long';
-    process.env.REFRESH_TOKEN_SECRET = 'supersecret_refresh_key_minimum_32_chars_long';
+    process.env.JWT_REFRESH_SECRET = 'supersecret_refresh_key_minimum_32_chars_long';
   });
 
   describe('POST /api/auth/register', () => {
