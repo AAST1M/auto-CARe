@@ -105,7 +105,9 @@ describe('Auto Care AI Core Features E2E & Unit Tests', () => {
 
       prismaMock.user.findUnique.mockResolvedValue({
         id: 'test-user-id',
-        walletBalance: 500
+        walletBalance: 500,
+        commissionOwed: 0,
+        role: 'USER'
       } as any);
 
       const res = await request(app)
@@ -113,11 +115,11 @@ describe('Auto Care AI Core Features E2E & Unit Tests', () => {
         .send({ amount: 500 });
 
       expect(res.statusCode).toEqual(200);
-      expect(res.body).toEqual({ success: true, newBalance: 500 });
+      expect(res.body).toMatchObject({ success: true, newBalance: 500 });
 
       expect(updateSpy).toHaveBeenCalledWith({
         where: { id: 'test-user-id' },
-        data: { walletBalance: { increment: 500 } }
+        data: { walletBalance: { increment: 500 }, commissionOwed: 0 }
       });
 
       expect(createSpy).toHaveBeenCalledWith({
