@@ -22,7 +22,7 @@ const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 const PublicRoute = ({ children }: { children: React.ReactNode }) => {
-  const { token, isLoading, user } = useAuth();
+  const { token, isLoading } = useAuth();
   if (isLoading) return <AuthLoading />;
   // Redirect already-authenticated users away from login/signup
   if (token) return <Navigate to="/" replace />;
