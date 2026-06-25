@@ -41,6 +41,8 @@ model User {
   workshopLocation      String?       // Coords or Address string
   ownerNationalIdCard   String?       // Base64 document
   workshopName          String?       // Workshop name if they want to create workshop directly
+  workshopDescription   String?       // Optional description of the workshop
+  workshopPhoto         String?       // Base64 photo of the workshop
 
   // Customer specific fields
   userPlateNumber       String?

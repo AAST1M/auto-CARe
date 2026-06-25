@@ -142,6 +142,8 @@ export interface UserProfile {
   workshopLocation?: string;
   ownerNationalIdCard?: string;
   workshopName?: string;
+  workshopDescription?: string;
+  workshopPhoto?: string;
 }
 
 export interface WinchBooking {

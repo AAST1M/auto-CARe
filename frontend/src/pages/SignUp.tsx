@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, Moon, Sun, RefreshCw, CheckCircle, Camera, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
+import { Autocomplete, useJsApiLoader } from '@react-google-maps/api';
 import {
   validateEmail,
   validatePassword,
@@ -9,6 +10,9 @@ import {
   validateName
 } from '../utils/validators';
 import { API_URL } from '../config';
+
+const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || '';
+const LIBRARIES: ('places' | 'geometry')[] = ['places'];
 
 export const SignUp = () => {
   const { login } = useAuth();
@@ -124,6 +128,26 @@ export const SignUp = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const { isLoaded: isMapLoaded } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_MAPS_KEY,
+    libraries: LIBRARIES,
+  });
+
+  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+
+  const onLoadAutocomplete = (autocomplete: google.maps.places.Autocomplete) => {
+    autocompleteRef.current = autocomplete;
+  };
+
+  const onPlaceChanged = () => {
+    if (autocompleteRef.current !== null) {
+      const place = autocompleteRef.current.getPlace();
+      if (place.formatted_address) {
+        setWorkshopLocation(place.formatted_address);
+      }
+    }
+  };
+
   // Winch Driver States
   const [licenseExpiry, setLicenseExpiry] = useState('');
   const [plateNumber, setPlateNumber] = useState('');
@@ -134,6 +158,8 @@ export const SignUp = () => {
   // Workshop Owner States
   const [workshopName, setWorkshopName] = useState('');
   const [workshopLocation, setWorkshopLocation] = useState('');
+  const [workshopDescription, setWorkshopDescription] = useState('');
+  const [workshopPhoto, setWorkshopPhoto] = useState('');
   const [taxCard, setTaxCard] = useState('');
   const [ownerNationalIdCard, setOwnerNationalIdCard] = useState('');
 
@@ -273,6 +299,8 @@ export const SignUp = () => {
       } else if (role === 'WORKSHOP_OWNER') {
         payload.workshopName = workshopName;
         payload.workshopLocation = workshopLocation;
+        payload.workshopDescription = workshopDescription;
+        payload.workshopPhoto = workshopPhoto;
         payload.taxCard = taxCard;
         payload.ownerNationalIdCard = ownerNationalIdCard;
       } else if (role === 'USER') {
@@ -559,16 +587,60 @@ export const SignUp = () => {
             </div>
 
             {/* Workshop Location */}
+            <div className="glass-panel rounded-xl p-1 relative">
+              {isMapLoaded ? (
+                <Autocomplete
+                  onLoad={onLoadAutocomplete}
+                  onPlaceChanged={onPlaceChanged}
+                  options={{ componentRestrictions: { country: 'eg' } }}
+                >
+                  <input
+                    id="signup-workshop-location"
+                    type="text"
+                    placeholder="Workshop Location (Address or Coordinates)"
+                    title="Workshop Location"
+                    value={workshopLocation}
+                    onChange={(e) => setWorkshopLocation(e.target.value)}
+                    className="w-full bg-transparent p-4 outline-none text-slate-955 dark:text-white placeholder-gray-500"
+                  />
+                </Autocomplete>
+              ) : (
+                <input
+                  id="signup-workshop-location"
+                  type="text"
+                  placeholder="Workshop Location (Address or Coordinates)"
+                  title="Workshop Location"
+                  value={workshopLocation}
+                  onChange={(e) => setWorkshopLocation(e.target.value)}
+                  className="w-full bg-transparent p-4 outline-none text-slate-955 dark:text-white placeholder-gray-500"
+                />
+              )}
+            </div>
+
+            {/* Workshop Description */}
             <div className="glass-panel rounded-xl p-1">
-              <input
-                id="signup-workshop-location"
-                type="text"
-                placeholder="Workshop Location (Address or Coordinates)"
-                title="Workshop Location"
-                value={workshopLocation}
-                onChange={(e) => setWorkshopLocation(e.target.value)}
-                className="w-full bg-transparent p-4 outline-none text-slate-955 dark:text-white placeholder-gray-500"
+              <textarea
+                id="signup-workshop-description"
+                placeholder="Workshop Description (Optional)"
+                title="Workshop Description"
+                value={workshopDescription}
+                onChange={(e) => setWorkshopDescription(e.target.value)}
+                className="w-full bg-transparent p-4 outline-none text-slate-955 dark:text-white placeholder-gray-500 resize-none h-24"
               />
+            </div>
+
+            {/* Workshop Photo */}
+            <div className="glass-panel rounded-xl p-2">
+              <label htmlFor="signup-workshop-photo" className="block text-xs text-gray-400 mb-1">Workshop Photo (Outside) - Optional</label>
+              <input
+                id="signup-workshop-photo"
+                type="file"
+                accept="image/*"
+                title="Workshop Photo"
+                onChange={(e) => handleFileChange(e, setWorkshopPhoto)}
+                className="w-full text-xs text-slate-900 dark:text-white"
+              />
+              {workshopPhoto && <span className="text-[10px] text-green-500">✓ Uploaded</span>}
             </div>
 
             {/* Tax Card */}
