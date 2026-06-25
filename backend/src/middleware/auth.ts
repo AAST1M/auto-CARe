@@ -11,7 +11,7 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
 
   if (token == null) return res.status(401).json({ error: 'Authentication required. Please sign in.' });
 
-  jwt.verify(token, process.env.JWT_SECRET || 'secret', (err: any, user: any) => {
+  jwt.verify(token, (process.env.JWT_SECRET as string), (err: any, user: any) => {
     if (err) return res.status(403).json({ error: 'Your session has expired. Please sign in again.' });
     req.user = user;
     next();
