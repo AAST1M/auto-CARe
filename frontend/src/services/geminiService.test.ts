@@ -28,7 +28,7 @@ describe('geminiService', () => {
   });
 
   it('should successfully diagnose an issue without media', async () => {
-    const mockResponse = { response: 'The issue is a flat tire.' };
+    const mockResponse = { reply: 'The issue is a flat tire.', action: 'WINCH' };
     (global.fetch as any).mockResolvedValueOnce({
       ok: true,
       json: async () => mockResponse,
@@ -43,13 +43,13 @@ describe('geminiService', () => {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer test-token'
       },
-      body: JSON.stringify({ symptom, media: undefined })
+      body: JSON.stringify({ symptom, language: 'ar' })
     });
-    expect(result).toBe(mockResponse.response);
+    expect(result).toEqual(mockResponse);
   });
 
   it('should successfully diagnose an issue with media', async () => {
-    const mockResponse = { response: 'The issue is a broken belt.' };
+    const mockResponse = { reply: 'The issue is a broken belt.', action: null };
     (global.fetch as any).mockResolvedValueOnce({
       ok: true,
       json: async () => mockResponse,
@@ -65,13 +65,13 @@ describe('geminiService', () => {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer test-token'
       },
-      body: JSON.stringify({ symptom, media })
+      body: JSON.stringify({ symptom, media, language: 'ar' })
     });
-    expect(result).toBe(mockResponse.response);
+    expect(result).toEqual(mockResponse);
   });
 
   it('should handle a missing token in localStorage', async () => {
-    const mockResponse = { response: 'Test response' };
+    const mockResponse = { reply: 'Test response', action: null };
     (global.fetch as any).mockResolvedValueOnce({
       ok: true,
       json: async () => mockResponse,
@@ -88,9 +88,9 @@ describe('geminiService', () => {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer '
       },
-      body: JSON.stringify({ symptom: 'test', media: undefined })
+      body: JSON.stringify({ symptom: 'test', language: 'ar' })
     });
-    expect(result).toBe(mockResponse.response);
+    expect(result).toEqual(mockResponse);
   });
 
   it('should handle HTTP errors gracefully', async () => {
@@ -103,7 +103,7 @@ describe('geminiService', () => {
 
     const result = await diagnoseCarIssue('engine light on');
 
-    expect(result).toBe("Connection to AI Core interrupted. Please check your network or try again later.");
+    expect(result).toEqual({ reply: "Connection to AI Core interrupted. Please check your network or try again later.", action: null });
     expect(consoleSpy).toHaveBeenCalled();
     
     consoleSpy.mockRestore();
@@ -117,7 +117,7 @@ describe('geminiService', () => {
 
     const result = await diagnoseCarIssue('engine light on');
 
-    expect(result).toBe("I'm having trouble analyzing that right now.");
+    expect(result).toEqual({ reply: "I'm having trouble analyzing that right now.", action: null });
   });
 
   it('should handle network errors gracefully', async () => {
@@ -127,7 +127,7 @@ describe('geminiService', () => {
 
     const result = await diagnoseCarIssue('engine light on');
 
-    expect(result).toBe("Connection to AI Core interrupted. Please check your network or try again later.");
+    expect(result).toEqual({ reply: "Connection to AI Core interrupted. Please check your network or try again later.", action: null });
     expect(consoleSpy).toHaveBeenCalled();
     
     consoleSpy.mockRestore();
