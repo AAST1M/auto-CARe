@@ -74,6 +74,7 @@ describe('Auth Routes', () => {
       expect(res.statusCode).toEqual(400);
       expect(res.body.error).toEqual('An account with this email already exists');
     });
+
   });
 
   describe('POST /api/auth/login', () => {
