@@ -89,17 +89,19 @@ router.get('/appointments', authenticateToken, async (req: AuthRequest, res) => 
     const userId = req.user!.id;
 
     if (role === 'WORKSHOP_OWNER') {
-      const workshops = await prisma.workshop.findMany({ where: { ownerId: userId } });
-      const workshopIds = workshops.map(w => w.id);
-
       let appointments = await prisma.appointment.findMany({
-        where: { workshopId: { in: workshopIds } },
+        where: { workshop: { ownerId: userId } },
         include: {
           user: { select: { name: true, email: true, phone: true } },
           workshop: { select: { name: true } }
         },
         orderBy: { createdAt: 'desc' }
       });
+
+      // Get workshopIds if appointments is empty to fallback to mock data
+      const workshopIds = appointments.length === 0
+        ? (await prisma.workshop.findMany({ where: { ownerId: userId }, select: { id: true } })).map(w => w.id)
+        : [];
 
       if (appointments.length === 0 && workshopIds.length > 0) {
         let dummyUser = await prisma.user.findFirst({ where: { email: 'dummy_customer@example.com' } });
