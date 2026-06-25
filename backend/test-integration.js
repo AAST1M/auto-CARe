@@ -64,6 +64,25 @@ async function runTests() {
   console.log('Success! User registered. ID:', regRes.body.user.id);
   const userToken = regRes.body.token;
 
+  // 1b. Attempt duplicate registration
+  console.log('\n[1b] Attempting duplicate registration (should fail)...');
+  const duplicateRegRes = await request(`${API_BASE}/auth/register`, {
+    method: 'POST',
+    body: {
+      email: uniqueEmail,
+      password: 'password123',
+      name: 'Integration Test User',
+      phone: '1234567890',
+      role: 'USER'
+    }
+  });
+
+  if (duplicateRegRes.status !== 400) {
+    console.error('Duplicate registration check failed:', duplicateRegRes.body);
+    process.exit(1);
+  }
+  console.log('Success! Duplicate registration rejected.');
+
   // 2. Login the registered user
   console.log('\n[2] Logging in the registered user...');
   const loginRes = await request(`${API_BASE}/auth/login`, {
