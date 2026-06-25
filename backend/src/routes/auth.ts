@@ -119,7 +119,6 @@ router.post('/register', async (req, res) => {
       password, 
       name, 
       phone, 
-      role,
       
       // Winch
       licenseExpiry,
@@ -146,6 +145,8 @@ router.post('/register', async (req, res) => {
       carPhotoRight,
       carPhotoLeft
     } = req.body;
+
+    const role: string = 'USER';
 
     // --- Server-side validation ---
     if (!email || !email.trim()) {
