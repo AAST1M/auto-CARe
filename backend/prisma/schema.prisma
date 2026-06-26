@@ -130,6 +130,8 @@ model WinchBooking {
   driverLng   Float?
   userLat     Float?
   userLng     Float?
+  destLat     Float?
+  destLng     Float?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }

@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "WinchBooking" ADD COLUMN     "destLat" DOUBLE PRECISION,
+ADD COLUMN     "destLng" DOUBLE PRECISION;

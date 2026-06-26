@@ -50,13 +50,13 @@ app.use(
       if (!origin) return callback(null, true);
       
       // Auto-permit any localhost or 127.0.0.1 port in development
-      const isLocalhost = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+      const isLocalhost = process.env.NODE_ENV !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
       
       if (isLocalhost || allowedOrigins.includes(origin)) return callback(null, true);
       callback(new Error(`CORS: Origin '${origin}' is not allowed.`));
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-playwright-test'],
     credentials: true
   })
 );
@@ -65,7 +65,7 @@ const io = new Server(httpServer, {
   cors: {
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
-      const isLocalhost = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+      const isLocalhost = process.env.NODE_ENV !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
       if (isLocalhost || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }

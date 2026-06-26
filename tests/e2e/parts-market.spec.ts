@@ -93,7 +93,7 @@ test.describe('Spare Parts Market E2E', () => {
     // Top up wallet balance of E2E Customer to 1000 EGP so they can afford the purchase
     await userPage.evaluate(async () => {
       const token = localStorage.getItem('token');
-      await fetch('http://localhost:5001/api/auth/wallet/topup', {
+      await fetch('http://localhost:5001/api/wallet/topup', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

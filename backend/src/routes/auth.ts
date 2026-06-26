@@ -87,29 +87,6 @@ router.patch('/me', authenticateToken, async (req: AuthRequest, res) => {
   }
 });
 
-// POST /api/auth/wallet/topup — Add funds to wallet (simulating payment gateway)
-router.post('/wallet/topup', authenticateToken, async (req: AuthRequest, res) => {
-  try {
-    const { amount } = req.body;
-    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
-      return res.status(400).json({ error: 'A valid amount is required' });
-    }
-
-    const updatedUser = await prisma.user.update({
-      where: { id: req.user!.id },
-      data: {
-        walletBalance: { increment: Number(amount) }
-      },
-      select: {
-        id: true, email: true, name: true, role: true, walletBalance: true
-      }
-    });
-
-    res.json(updatedUser);
-  } catch (error) {
-    res.status(500).json({ error: 'Server error during top-up' });
-  }
-});
 
 // POST /api/auth/register — create a new account
 router.post('/register', async (req, res) => {
@@ -426,6 +403,8 @@ router.post('/logout', authenticateToken, async (req: AuthRequest, res) => {
   }
 });
 
+const testResetTokens = new Map<string, string>();
+
 // POST /api/auth/forgot-password
 router.post('/forgot-password', async (req, res) => {
   try {
@@ -452,6 +431,10 @@ router.post('/forgot-password', async (req, res) => {
         resetTokenExpiry: tokenExpiry
       }
     });
+
+    if (user.email.endsWith('@test.com') || user.email.endsWith('@example.com')) {
+      testResetTokens.set(user.email.toLowerCase(), resetToken);
+    }
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const resetLink = `${frontendUrl}/reset-password?token=${resetToken}&email=${encodeURIComponent(user.email)}`;
@@ -506,6 +489,22 @@ router.post('/reset-password', async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
+});
+
+// GET /api/auth/test/reset-token/:email (Test-only helper)
+router.get('/test/reset-token/:email', (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(403).json({ error: 'Access denied in production' });
+  }
+  const email = req.params.email.toLowerCase();
+  if (!email.endsWith('@test.com') && !email.endsWith('@example.com')) {
+    return res.status(403).json({ error: 'Access denied for non-test emails' });
+  }
+  const token = testResetTokens.get(email);
+  if (!token) {
+    return res.status(404).json({ error: 'Token not found' });
+  }
+  res.json({ token });
 });
 
 async function cleanOldTestUsers() {

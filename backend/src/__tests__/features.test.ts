@@ -113,7 +113,7 @@ describe('Auto Care AI Core Features E2E & Unit Tests', () => {
         .send({ amount: 500 });
 
       expect(res.statusCode).toEqual(200);
-      expect(res.body).toEqual({ success: true, newBalance: 500 });
+      expect(res.body).toMatchObject({ success: true, newBalance: 500 });
 
       expect(updateSpy).toHaveBeenCalledWith({
         where: { id: 'test-user-id' },

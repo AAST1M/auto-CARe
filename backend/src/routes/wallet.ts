@@ -44,7 +44,8 @@ router.post('/topup', authenticateToken, async (req: AuthRequest, res) => {
       }
     }
 
-    const newCommissionOwed = Math.max(0, user.commissionOwed - commissionDeducted);
+    const currentCommissionOwed = user.commissionOwed || 0;
+    const newCommissionOwed = Math.max(0, currentCommissionOwed - commissionDeducted);
 
     await prisma.$transaction(async (tx) => {
       // Update wallet balance and commission owed atomically
@@ -52,7 +53,7 @@ router.post('/topup', authenticateToken, async (req: AuthRequest, res) => {
         where: { id: userId },
         data: {
           walletBalance: { increment: netCredit },
-          commissionOwed: newCommissionOwed
+          ...(user.role === 'WINCH_DRIVER' && { commissionOwed: newCommissionOwed })
         }
       });
 
@@ -103,7 +104,7 @@ router.post('/topup', authenticateToken, async (req: AuthRequest, res) => {
 });
 
 // ─── POST /api/wallet/calculate-trip-price — Haversine distance pricing ───────
-router.post('/calculate-trip-price', async (req, res) => {
+router.post('/calculate-trip-price', authenticateToken, async (req, res) => {
   try {
     const { pickupLat, pickupLng, dropLat, dropLng, ratePerKm } = req.body;
 

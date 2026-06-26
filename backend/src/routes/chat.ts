@@ -1,9 +1,8 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import prisma from '../prismaClient';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Protect all chat routes
 router.use(authenticateToken);

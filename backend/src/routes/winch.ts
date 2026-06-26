@@ -5,7 +5,7 @@ import { authenticateToken, requireRole, AuthRequest } from '../middleware/auth'
 const router = Router();
 
 // Get available winch offers
-router.get('/offers', async (req, res) => {
+router.get('/offers', authenticateToken, async (req, res) => {
   try {
     const offers = await prisma.winchOffer.findMany();
     res.json(offers);
@@ -293,7 +293,9 @@ router.get('/location/:id', authenticateToken, async (req: any, res) => {
       userLat: booking.userLat,
       userLng: booking.userLng,
       driverLat: booking.driverLat,
-      driverLng: booking.driverLng
+      driverLng: booking.driverLng,
+      destLat: booking.destLat,
+      destLng: booking.destLng
     });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });

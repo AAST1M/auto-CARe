@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Winch Tracking E2E', () => {
-  test('should allow customer to request winch, driver to accept, track live locations, and complete the tow job', async ({ browser, request }) => {
+  test('should allow customer to request winch, driver to accept, negotiate, track live locations, cancel/complete sequential steps, pay, and view details', async ({ browser, request }) => {
     
     // --- 1. PROVISION TEST ACCOUNTS ---
     const driverEmail = `winch_driver_${Date.now()}@test.com`;
@@ -96,22 +96,65 @@ test.describe('Winch Tracking E2E', () => {
     // Click Accept on customer side
     await userPage.click('button:has-text("Accept")');
 
-    // --- 4. DRIVER ACCEPTS REQUEST ---
-    // Bring driver back to focus and accept the request
-    await expect(driverPage.locator('text=Stuck Customer')).toBeVisible({ timeout: 15000 });
+    // --- 4. DRIVER REVIEW AND PRICE NEGOTIATION ---
+    // Bring driver back to focus, check request review screen with interactive map
+    await expect(driverPage.locator('h2', { hasText: 'Incoming Request' })).toBeVisible({ timeout: 15000 });
+    
+    // Increase price by clicking '+'
+    const initialPriceText = await driverPage.locator('span.text-cyber-primary.text-lg').innerText();
+    const initialPrice = parseInt(initialPriceText.split(' ')[0]);
+    await driverPage.click('button:has-text("+")');
+    
+    const increasedPriceText = await driverPage.locator('span.text-cyber-primary.text-lg').innerText();
+    const increasedPrice = parseInt(increasedPriceText.split(' ')[0]);
+    expect(increasedPrice).toBe(initialPrice + 50);
+
+    // Accept request at the negotiated price
     await driverPage.click('button:has-text("Accept")');
 
-    // --- 5. VERIFY LIVE TRACKING SCREEN FOR BOTH ---
-    // Both pages should transition to live tracking map
+    // --- 5. VERIFY LIVE NAVIGATION & CANCELLATION BUTTON STATE ---
+    // Both pages should transition to live navigation map
     await expect(driverPage.locator('h2', { hasText: 'Live Navigation' })).toBeVisible({ timeout: 15000 });
     await expect(userPage.locator('h2', { hasText: 'Live Tracking' })).toBeVisible({ timeout: 15000 });
 
-    // --- 6. DRIVER COMPLETES JOB ---
-    await driverPage.click('button:has-text("Arrived / Complete")');
+    // Customer cancellation button is active
+    await expect(userPage.locator('button:has-text("Cancel Booking")')).toBeVisible();
 
-    // Verify they return to their respective dashboards
-    await expect(driverPage.locator('h2', { hasText: 'Winch Command' })).toBeVisible({ timeout: 15000 });
-    await expect(userPage.locator('text=Core Services')).toBeVisible({ timeout: 15000 });
+    // --- 6. SEQUENTIAL CONFIRMATION STEPS ---
+    // Driver: Arrived at Customer (Point A)
+    await driverPage.click('button:has-text("Arrived at Customer")');
+    await expect(driverPage.locator('p.text-cyber-primary', { hasText: 'Arrived' })).toBeVisible();
+
+    // Driver: Pickup Done
+    await driverPage.click('button:has-text("Pickup Done")');
+    await expect(driverPage.locator('p.text-cyber-primary', { hasText: 'In Progress' })).toBeVisible();
+
+    // Customer cancel button should be hidden because status is now In Progress
+    await expect(userPage.locator('button:has-text("Cancel Booking")')).not.toBeVisible();
+
+    // Driver: Complete Trip
+    await driverPage.click('button:has-text("Complete Trip")');
+    await expect(driverPage.locator('text=Waiting for customer payment to complete booking').first()).toBeVisible();
+
+    // --- 7. PAYMENT FLOW & INVOICE ---
+    // Customer sees Trip Invoice modal
+    await expect(userPage.locator('h3', { hasText: 'Trip Invoice' })).toBeVisible({ timeout: 10000 });
+    
+    // Select Cash payment
+    await userPage.click('text=Cash payment');
+    await userPage.click('button:has-text("Confirm and Pay")');
+
+    // Customer sees success receipt details
+    await expect(userPage.locator('h3', { hasText: 'Tow Completed' })).toBeVisible({ timeout: 10000 });
+    await userPage.click('button:has-text("Done")');
+
+    // Driver sees trip earnings summary
+    await expect(driverPage.locator('h3', { hasText: 'Trip Completed!' })).toBeVisible({ timeout: 10000 });
+    await driverPage.click('button:has-text("Back to Dashboard")');
+
+    // Both should safely return to their dashboards
+    await expect(driverPage.locator('h2', { hasText: 'Winch Command' })).toBeVisible({ timeout: 10000 });
+    await expect(userPage.locator('text=Core Services')).toBeVisible({ timeout: 10000 });
 
     // Close sessions
     await userContext.close();

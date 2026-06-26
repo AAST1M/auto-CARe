@@ -71,6 +71,9 @@ export interface WinchOffer {
   rating: number;
   vehicle: string;
   status?: 'pending' | 'accepted' | 'rejected';
+  driverId?: string;
+  driverSocketId?: string;
+  distance?: string; // e.g. "2.4 km" — from server-side proximity calculation
 }
 
 export enum CarType {

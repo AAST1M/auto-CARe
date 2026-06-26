@@ -187,16 +187,16 @@ export const WorkshopDashboard = () => {
                    
                    <div className="space-y-4">
                      <div>
-                       <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1 mb-1 block">Workshop Name</label>
-                       <input type="text" value={profileForm.name} onChange={e => setProfileForm({...profileForm, name: e.target.value})} className="w-full bg-white dark:bg-black/40 p-4 rounded-xl outline-none text-slate-900 dark:text-white border border-gray-200 dark:border-gray-800" />
+                       <label htmlFor="workshop-name" className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1 mb-1 block">Workshop Name</label>
+                       <input id="workshop-name" placeholder="Workshop Name" type="text" value={profileForm.name} onChange={e => setProfileForm({...profileForm, name: e.target.value})} className="w-full bg-white dark:bg-black/40 p-4 rounded-xl outline-none text-slate-900 dark:text-white border border-gray-200 dark:border-gray-800" />
                      </div>
                      <div>
-                       <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1 mb-1 block">Description</label>
-                       <textarea value={profileForm.description} onChange={e => setProfileForm({...profileForm, description: e.target.value})} className="w-full bg-white dark:bg-black/40 p-4 rounded-xl outline-none text-slate-900 dark:text-white border border-gray-200 dark:border-gray-800 h-24" />
+                       <label htmlFor="workshop-desc" className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1 mb-1 block">Description</label>
+                       <textarea id="workshop-desc" placeholder="Workshop Description" value={profileForm.description} onChange={e => setProfileForm({...profileForm, description: e.target.value})} className="w-full bg-white dark:bg-black/40 p-4 rounded-xl outline-none text-slate-900 dark:text-white border border-gray-200 dark:border-gray-800 h-24" />
                      </div>
                      <div>
-                       <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1 mb-1 block">Address</label>
-                       <input type="text" value={profileForm.address} onChange={e => setProfileForm({...profileForm, address: e.target.value})} className="w-full bg-white dark:bg-black/40 p-4 rounded-xl outline-none text-slate-900 dark:text-white border border-gray-200 dark:border-gray-800" />
+                       <label htmlFor="workshop-address" className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1 mb-1 block">Address</label>
+                       <input id="workshop-address" placeholder="Workshop Address" type="text" value={profileForm.address} onChange={e => setProfileForm({...profileForm, address: e.target.value})} className="w-full bg-white dark:bg-black/40 p-4 rounded-xl outline-none text-slate-900 dark:text-white border border-gray-200 dark:border-gray-800" />
                      </div>
                      <div>
                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1 mb-1 block">Pin Location on Map</label>
@@ -225,8 +225,8 @@ export const WorkshopDashboard = () => {
                      </div>
                      
                      <div>
-                       <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1 mb-1 block">Cover Photo URL / Base64</label>
-                       <input type="text" value={profileForm.image} onChange={e => setProfileForm({...profileForm, image: e.target.value})} placeholder="https://..." className="w-full bg-white dark:bg-black/40 p-4 rounded-xl outline-none text-slate-900 dark:text-white border border-gray-200 dark:border-gray-800 mb-2" />
+                       <label htmlFor="workshop-image" className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1 mb-1 block">Cover Photo URL / Base64</label>
+                       <input id="workshop-image" type="text" value={profileForm.image} onChange={e => setProfileForm({...profileForm, image: e.target.value})} placeholder="https://..." className="w-full bg-white dark:bg-black/40 p-4 rounded-xl outline-none text-slate-900 dark:text-white border border-gray-200 dark:border-gray-800 mb-2" />
                        {profileForm.image && <img src={profileForm.image} alt="Preview" className="w-full h-32 object-cover rounded-xl" />}
                      </div>
 

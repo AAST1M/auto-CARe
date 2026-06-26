@@ -88,6 +88,16 @@
       .neon-text {
         text-shadow: none; /* No neon text in light mode for readability */
       }
+      .floating-map-controls {
+        bottom: calc(var(--sheet-height, 350px) + 16px);
+      }
+      .animate-ping-custom-1 {
+        animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+      }
+      .animate-ping-custom-2 {
+        animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+        animation-delay: 0.3s;
+      }
     </style>
   <script type="importmap">
 {

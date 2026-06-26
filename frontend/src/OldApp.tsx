@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Car,
   Wrench,
@@ -63,6 +64,7 @@ const GMAP_DARK_STYLE: google.maps.MapTypeStyle[] = [
 ];
 import { View, Message, Workshop, WinchOffer, CarType, UserProfile, UserBooking, UserRole, WorkshopAppointment } from './types';
 import { WinchLiveUser } from './pages/WinchLiveUser';
+import { WinchDashboard } from './pages/WinchDashboard';
 import { BiddingUser } from './pages/BiddingUser';
 import { BiddingWorkshop } from './pages/BiddingWorkshop';
 import { diagnoseCarIssue, MediaInput } from './services/geminiService';
@@ -258,7 +260,73 @@ const WinchNegotiationMap: React.FC<WinchNegotiationMapProps> = ({
 };
 
 
+const getPathFromView = (view: View): string => {
+  switch (view) {
+    case View.ONBOARDING: return '/onboarding';
+    case View.LOGIN: return '/login';
+    case View.SIGN_UP: return '/signup';
+    case View.FORGOT_PASSWORD: return '/forgot-password';
+    case View.USER_DETAILS: return '/user-details';
+    case View.ROLE_SELECTION: return '/role-selection';
+    case View.SETUP_CAR: return '/setup-car';
+    case View.WINCH_ONBOARDING: return '/winch/onboarding';
+    case View.WORKSHOP_ONBOARDING: return '/workshop/onboarding';
+    case View.HOME: return '/';
+    case View.WINCH_DASHBOARD: return '/';
+    case View.WORKSHOP_DASHBOARD: return '/';
+    case View.AI_CHAT: return '/chat';
+    case View.WINCH_NEGOTIATION: return '/winch/negotiation';
+    case View.WORKSHOP_LIST: return '/workshops';
+    case View.WORKSHOP_DETAIL: return '/workshops/detail';
+    case View.BOOKING: return '/booking';
+    case View.SUCCESS: return '/success';
+    case View.PROFILE: return '/profile';
+    case View.SETTINGS: return '/settings';
+    case View.SPARE_PARTS: return '/spare-parts';
+    case View.WINCH_LIVE_MAP: return '/winch/live-map';
+    case View.ADMIN_DASHBOARD: return '/admin';
+    case View.BIDDING_USER: return '/bidding/user';
+    case View.BIDDING_WORKSHOP: return '/bidding/workshop';
+    default: return '/';
+  }
+};
+
+const getViewFromPath = (path: string, role: string | null): View => {
+  switch (path) {
+    case '/onboarding': return View.ONBOARDING;
+    case '/login': return View.LOGIN;
+    case '/signup': return View.SIGN_UP;
+    case '/forgot-password': return View.FORGOT_PASSWORD;
+    case '/user-details': return View.USER_DETAILS;
+    case '/role-selection': return View.ROLE_SELECTION;
+    case '/setup-car': return View.SETUP_CAR;
+    case '/winch/onboarding': return View.WINCH_ONBOARDING;
+    case '/workshop/onboarding': return View.WORKSHOP_ONBOARDING;
+    case '/chat': return View.AI_CHAT;
+    case '/winch/negotiation': return View.WINCH_NEGOTIATION;
+    case '/workshops': return View.WORKSHOP_LIST;
+    case '/workshops/detail': return View.WORKSHOP_DETAIL;
+    case '/booking': return View.BOOKING;
+    case '/success': return View.SUCCESS;
+    case '/profile': return View.PROFILE;
+    case '/settings': return View.SETTINGS;
+    case '/spare-parts': return View.SPARE_PARTS;
+    case '/winch/live-map': return View.WINCH_LIVE_MAP;
+    case '/admin': return View.ADMIN_DASHBOARD;
+    case '/bidding/user': return View.BIDDING_USER;
+    case '/bidding/workshop': return View.BIDDING_WORKSHOP;
+    case '/':
+    default:
+      if (role === 'ADMIN') return View.ADMIN_DASHBOARD;
+      if (role === 'WINCH_DRIVER') return View.WINCH_DASHBOARD;
+      if (role === 'WORKSHOP_OWNER') return View.WORKSHOP_DASHBOARD;
+      return View.HOME;
+  }
+};
+
 const App: React.FC = () => {
+  const routerNavigate = useNavigate();
+  const location = useLocation();
   const authContext = useAuth();
   const { user: authUser, token } = authContext;
 
@@ -293,6 +361,8 @@ const App: React.FC = () => {
   useEffect(() => {
     if (showHistory) fetchHistory();
   }, [showHistory]);
+
+  // Check active booking on load
 
   // --- Spare Parts States ---
   const [parts, setParts] = useState<any[]>([]);
@@ -343,20 +413,14 @@ const App: React.FC = () => {
   const [view, setView] = useState<View>(() => {
     const localToken = localStorage.getItem('token');
     if (localToken && authUser) {
-      if (authUser.role === 'ADMIN') return View.ADMIN_DASHBOARD;
-      if (authUser.role === 'WINCH_DRIVER') return View.WINCH_DASHBOARD;
-      if (authUser.role === 'WORKSHOP_OWNER') return View.WORKSHOP_DASHBOARD;
-      return View.HOME;
+      return getViewFromPath(window.location.pathname, authUser.role);
     }
     return View.ONBOARDING;
   });
   const [history, setHistory] = useState<View[]>(() => {
     const localToken = localStorage.getItem('token');
     if (localToken && authUser) {
-      if (authUser.role === 'ADMIN') return [View.ADMIN_DASHBOARD];
-      if (authUser.role === 'WINCH_DRIVER') return [View.WINCH_DASHBOARD];
-      if (authUser.role === 'WORKSHOP_OWNER') return [View.WORKSHOP_DASHBOARD];
-      return [View.HOME];
+      return [getViewFromPath(window.location.pathname, authUser.role)];
     }
     return [View.ONBOARDING];
   });
@@ -366,7 +430,7 @@ const App: React.FC = () => {
   const [adminTransactions, setAdminTransactions] = useState<any[]>([]);
   const [adminUsers, setAdminUsers] = useState<any[]>([]);
   const [adminDriverCommissions, setAdminDriverCommissions] = useState<any[]>([]);
-  const [adminActiveTab, setAdminActiveTab] = useState<'overview' | 'transactions' | 'users' | 'commission'>('overview');
+  const [adminActiveTab, setAdminActiveTab] = useState<'overview' | 'transactions' | 'users' | 'commission' | 'approvals'>('overview');
   const [adminSearch, setAdminSearch] = useState('');
   const [adminTxFilter, setAdminTxFilter] = useState<'all' | 'workshop' | 'winch'>('all');
   const [adminCommissionInputs, setAdminCommissionInputs] = useState<Record<string, string>>({});
@@ -538,12 +602,17 @@ const App: React.FC = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 
   // Winch State (Customer Side)
-  const [winchStatus, setWinchStatus] = useState<'idle' | 'searching' | 'negotiating' | 'confirmed'>('idle');
+  const [winchStatus, setWinchStatus] = useState<'idle' | 'searching' | 'negotiating' | 'confirmed' | 'no_drivers'>('idle');
   const [liveBookingId, setLiveBookingId] = useState<string | null>(null);
   const [activeOffers, setActiveOffers] = useState<WinchOffer[]>([]);
   const winchSocketRef = useRef<ReturnType<typeof io> | null>(null);
   const winchSocketIdRef = useRef<string>('');
   const [winchSocket, setWinchSocket] = useState<ReturnType<typeof io> | null>(null);
+  // Progressive radius expansion: 5 → 10 → 15 → 20 → 25 → 30 km, then no drivers
+  const RADIUS_STEPS = [5, 10, 15, 20, 25, 30];
+  const [searchRadius, setSearchRadius] = useState<number>(5);
+  const searchRadiusStepRef = useRef<number>(0); // current index into RADIUS_STEPS
+  const radiusSearchTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Draggable Bottom Sheet State
   const [sheetY, setSheetY] = useState(0);
@@ -577,6 +646,10 @@ const App: React.FC = () => {
   }, [sheetY, isSheetDragging]);
 
   useEffect(() => {
+    document.documentElement.style.setProperty('--sheet-height', `${sheetHeight}px`);
+  }, [sheetHeight]);
+
+  useEffect(() => {
     if (sheetRef.current) {
       const timer = setTimeout(() => {
         if (sheetRef.current) {
@@ -586,6 +659,30 @@ const App: React.FC = () => {
       return () => clearTimeout(timer);
     }
   }, [winchStatus, pickupSuggestions.length, dropoffSuggestions.length, activeOffers.length]);
+
+  // Check for active winch booking on load/token change
+  useEffect(() => {
+    if (!token) return;
+    const checkActiveBooking = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/winch/bookings/me`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const bookings = await res.json();
+          const active = bookings.find((b: any) => b.status !== 'Completed' && b.status !== 'Cancelled');
+          if (active && (user?.role === UserRole.USER || authContext.user?.role === UserRole.USER)) {
+            setLiveBookingId(active.id);
+            setWinchStatus('confirmed');
+            navigate(View.WINCH_LIVE_MAP);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to fetch active bookings', e);
+      }
+    };
+    checkActiveBooking();
+  }, [token, user?.role, authContext.user?.role]);
 
   const toggleSheetCollapse = () => {
     const sheetHeight = sheetRef.current?.offsetHeight || 350;
@@ -774,6 +871,7 @@ const App: React.FC = () => {
           if (authUser.role === 'WORKSHOP_OWNER') newRootView = View.WORKSHOP_DASHBOARD;
           
           setHistory([newRootView]);
+          routerNavigate(getPathFromView(newRootView));
           return newRootView;
         }
         return currentView;
@@ -1212,39 +1310,28 @@ const App: React.FC = () => {
 
   // --- Navigation Helpers ---
   useEffect(() => {
-    const handlePopState = () => {
-      if (history.length > 1) {
-        const newHistory = [...history];
-        newHistory.pop();
-        setHistory(newHistory);
-        setView(newHistory[newHistory.length - 1]);
-      } else {
-        // Trapping the user in the app if they press physical back button at root
-        if (authContext.user) {
-          window.history.pushState(null, '', window.location.href);
+    const newView = getViewFromPath(location.pathname, authContext.user?.role || user.role);
+    if (newView !== view) {
+      setView(newView);
+      setHistory(prev => {
+        if (prev.length > 1 && prev[prev.length - 2] === newView) {
+          return prev.slice(0, -1);
+        } else {
+          return [...prev, newView];
         }
-      }
-    };
-    window.addEventListener('popstate', handlePopState);
-    
-    // Ensure there's an initial state to pop
-    if (authContext.user && history.length === 1) {
-      window.history.replaceState(null, '', window.location.href);
-      window.history.pushState(null, '', window.location.href);
+      });
     }
-    
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [history, authContext.user]);
+  }, [location.pathname, authContext.user?.role, user.role, view]);
 
   const navigate = (newView: View) => {
     setHistory([...history, newView]);
     setView(newView);
-    window.history.pushState(null, '', window.location.href);
+    routerNavigate(getPathFromView(newView));
   };
 
   const goBack = () => {
     if (history.length > 1) {
-      window.history.back(); // This triggers the popstate event
+      window.history.back();
     }
   };
 
@@ -1365,20 +1452,23 @@ const App: React.FC = () => {
       });
 
       socket.on('booking_completed', () => {
-        alert('Your ride is completed!');
-        setLiveBookingId(null);
-        setIsWinchBusy(false);
-        setWinchStatus('idle');
-        setActiveWinchRequest(null);
-        
         // Refresh profile and wallet
         authContext.refreshUser();
         
         const currentRole = user?.role || authContext.user?.role;
         if (currentRole === 'WINCH_DRIVER') {
+          alert('Your ride is completed!');
+          setLiveBookingId(null);
+          setIsWinchBusy(false);
+          setWinchStatus('idle');
+          setActiveWinchRequest(null);
           navigate(View.WINCH_DASHBOARD);
         } else {
-          navigate(View.HOME);
+          // For customer, let WinchLiveUser handle displaying the receipt modal.
+          // Once they click "Done" in the receipt, WinchLiveUser calls onBack() which sets liveBookingId to null and view to HOME.
+          setIsWinchBusy(false);
+          setWinchStatus('idle');
+          setActiveWinchRequest(null);
         }
       });
     }
@@ -1455,6 +1545,16 @@ const App: React.FC = () => {
     }
   }, [winchSocket, user?.role, authContext.user?.role, token, myWorkshopId]);
 
+  // Cancel any ongoing radius expansion timer
+  const cancelRadiusSearch = () => {
+    if (radiusSearchTimerRef.current) {
+      clearInterval(radiusSearchTimerRef.current);
+      radiusSearchTimerRef.current = null;
+    }
+    searchRadiusStepRef.current = 0;
+    setSearchRadius(RADIUS_STEPS[0]);
+  };
+
   const requestWinch = () => {
     setWinchStatus('searching');
     setActiveOffers([]);
@@ -1463,35 +1563,75 @@ const App: React.FC = () => {
     const socket = winchSocketRef.current;
     if (!socket) return;
 
+    // Clean up old listeners
     socket.off('drivers_updated');
     socket.off('booking_confirmed');
     socket.off('request_declined');
     socket.off('driver_unavailable');
     socket.off('driver_countered');
+    cancelRadiusSearch();
 
-    socket.emit('get_drivers');
+    const userLat = pickupCoords?.lat || coords?.lat;
+    const userLng = pickupCoords?.lng || coords?.lng;
 
+    // ── Core poll function — emits get_drivers with proximity data ──────────
+    const pollDrivers = (radiusKm: number) => {
+      socket.emit('get_drivers', userLat && userLng ? { lat: userLat, lng: userLng, radius: radiusKm } : undefined);
+    };
+
+    // ── Progressive radius expansion logic ───────────────────────────────────
+    const startProgressiveSearch = () => {
+      searchRadiusStepRef.current = 0;
+      const initialRadius = RADIUS_STEPS[0];
+      setSearchRadius(initialRadius);
+      pollDrivers(initialRadius);
+
+      // Every 60 seconds, expand radius to next step
+      radiusSearchTimerRef.current = setInterval(() => {
+        const nextStep = searchRadiusStepRef.current + 1;
+
+        if (nextStep >= RADIUS_STEPS.length) {
+          // Exhausted all radius steps → no drivers
+          clearInterval(radiusSearchTimerRef.current!);
+          radiusSearchTimerRef.current = null;
+          searchRadiusStepRef.current = 0;
+          setSearchRadius(RADIUS_STEPS[0]);
+          setWinchStatus('no_drivers');
+          return;
+        }
+
+        searchRadiusStepRef.current = nextStep;
+        const nextRadius = RADIUS_STEPS[nextStep];
+        setSearchRadius(nextRadius);
+        pollDrivers(nextRadius);
+      }, 60_000);
+    };
+
+    // ── Listen for driver list updates ───────────────────────────────────────
     socket.on('drivers_updated', (drivers: any[]) => {
       if (drivers.length > 0) {
+        // Found drivers — stop expanding
+        cancelRadiusSearch();
         const mapped: WinchOffer[] = drivers.map((d: any) => ({
           id: d.socketId,
           driverName: d.driverName,
           price: tripPrice || d.price || 500,
-          eta: '~10 min',
+          eta: d.distanceStr ? `~${Math.ceil(((d.distanceKm ?? 5) / 30) * 60)} min` : '~10 min',
           rating: 4.8,
           vehicle: d.vehicle || 'Winch Truck',
           status: 'pending' as const,
           driverId: d.driverId,
           driverSocketId: d.socketId,
+          distance: d.distanceStr,
         }));
         setActiveOffers(mapped);
         setWinchStatus('negotiating');
-      } else {
-        setWinchStatus('searching');
       }
+      // If 0 drivers, keep searching — the interval will expand radius
     });
 
     socket.on('booking_confirmed', (data: { bookingId: string; driverName: string; vehicle: string; price: number }) => {
+      cancelRadiusSearch();
       setLiveBookingId(data.bookingId);
       setWinchStatus('confirmed');
       navigate(View.WINCH_LIVE_MAP);
@@ -1501,13 +1641,14 @@ const App: React.FC = () => {
 
     socket.on('request_declined', (data: { message: string }) => {
       alert(data.message);
-      socket.emit('get_drivers');
-      setWinchStatus('negotiating');
+      // Re-poll at the current radius level
+      pollDrivers(RADIUS_STEPS[searchRadiusStepRef.current]);
+      setWinchStatus('searching');
     });
 
     socket.on('driver_unavailable', (data: { message: string }) => {
       alert(data.message);
-      socket.emit('get_drivers');
+      pollDrivers(RADIUS_STEPS[searchRadiusStepRef.current]);
     });
 
     socket.on('driver_countered', (data: { driverId: string; price: number }) => {
@@ -1519,6 +1660,9 @@ const App: React.FC = () => {
       }));
       alert('Driver has countered your offer! Check the new price.');
     });
+
+    // Kick off the progressive search
+    startProgressiveSearch();
   };
 
   const adjustOfferPrice = (offerId: string, delta: number) => {
@@ -1548,8 +1692,12 @@ const App: React.FC = () => {
       car: carName,
       issue: `Winch from ${pickupAddress || 'current location'} to ${dropoffAddress || 'destination'} (${tripDistance || 0} km)`,
       price: offer.price,
-      lat: coords?.lat || 30.0444,
-      lng: coords?.lng || 31.2357,
+      lat: pickupCoords?.lat || coords?.lat || 30.0444,
+      lng: pickupCoords?.lng || coords?.lng || 31.2357,
+      pickupLat: pickupCoords?.lat || coords?.lat || 30.0444,
+      pickupLng: pickupCoords?.lng || coords?.lng || 31.2357,
+      dropoffLat: dropoffCoords?.lat,
+      dropoffLng: dropoffCoords?.lng,
       pickupAddress,
       dropoffAddress,
       tripDistance
@@ -1572,21 +1720,57 @@ const App: React.FC = () => {
     setWinchStatus('searching'); // show searching while driver confirms
 
     const carName = [user.carYear, user.carBrand, user.carModel].filter(Boolean).join(' ') || 'My Car';
-    
-    socket.emit('request_driver', {
-      customerId: userId,
-      customerName: user.name || authContext.user?.name || 'Customer',
-      driverSocketId: (offer as any).driverSocketId || offer.id,
-      car: carName,
-      issue: `Winch from ${pickupAddress || 'current location'} to ${dropoffAddress || 'destination'} (${tripDistance || 0} km)`,
-      price: offer.price,
-      lat: coords?.lat || 30.0444,
-      lng: coords?.lng || 31.2357,
-      pickupAddress,
-      dropoffAddress,
-      tripDistance
-    });
+
+    // ── Always get a fresh GPS fix before sending to the driver ──────────────
+    const sendRequest = (pickLat: number, pickLng: number) => {
+      // Persist as current coords so all subsequent operations use the real location
+      setCoords({ lat: pickLat, lng: pickLng });
+      if (!pickupCoords) setPickupCoords({ lat: pickLat, lng: pickLng });
+
+      socket.emit('request_driver', {
+        customerId: userId,
+        customerName: user.name || authContext.user?.name || 'Customer',
+        driverSocketId: (offer as any).driverSocketId || offer.id,
+        car: carName,
+        issue: `Winch from ${pickupAddress || 'current location'} to ${dropoffAddress || 'destination'} (${tripDistance || 0} km)`,
+        price: offer.price,
+        lat: pickLat,
+        lng: pickLng,
+        pickupLat: pickLat,
+        pickupLng: pickLng,
+        dropoffLat: dropoffCoords?.lat,
+        dropoffLng: dropoffCoords?.lng,
+        pickupAddress,
+        dropoffAddress,
+        tripDistance
+      });
+    };
+
+    const bestKnownLat = pickupCoords?.lat || coords?.lat;
+    const bestKnownLng = pickupCoords?.lng || coords?.lng;
+
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => sendRequest(pos.coords.latitude, pos.coords.longitude),
+        () => {
+          // GPS denied/timeout — use best available coords
+          if (bestKnownLat && bestKnownLng) {
+            sendRequest(bestKnownLat, bestKnownLng);
+          } else {
+            alert('Could not get your location. Please pin your pickup location on the map first.');
+            setWinchStatus('negotiating');
+          }
+        },
+        { enableHighAccuracy: true, timeout: 6000, maximumAge: 30000 }
+      );
+    } else if (bestKnownLat && bestKnownLng) {
+      sendRequest(bestKnownLat, bestKnownLng);
+    } else {
+      alert('Location not available. Please pin your pickup location on the map first.');
+      setWinchStatus('negotiating');
+    }
   };
+
 
   // Workshop Booking Logic
   const handleConfirmBooking = async () => {
@@ -1788,9 +1972,13 @@ const App: React.FC = () => {
 
   const fallbackToBackendPricing = async (pickup: {lat: number, lng: number}, drop: {lat: number, lng: number}) => {
     try {
+      const tokenVal = localStorage.getItem('token');
       const res = await fetch(`${API_URL}/api/wallet/calculate-trip-price`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(tokenVal && { 'Authorization': `Bearer ${tokenVal}` })
+        },
         body: JSON.stringify({ pickupLat: pickup.lat, pickupLng: pickup.lng, dropLat: drop.lat, dropLng: drop.lng, ratePerKm: 20 })
       });
       if (res.ok) {
@@ -3228,8 +3416,7 @@ const App: React.FC = () => {
         {winchStatus !== 'confirmed' && (
           <div 
             ref={locateBtnRef}
-            className="absolute right-4 z-30 flex flex-col gap-2 pointer-events-auto"
-            style={{ bottom: `${sheetHeight + 16}px` }}
+            className="absolute right-4 z-30 flex flex-col gap-2 pointer-events-auto floating-map-controls"
           >
             {/* Map Type Flyout Menu */}
             {showMapTypeMenu && (
@@ -3530,24 +3717,58 @@ const App: React.FC = () => {
           })()}
 
           {winchStatus === 'searching' && (
-            <div className="flex flex-col items-center py-8">
-              <div className="w-16 h-16 border-4 border-cyber-primary border-t-transparent rounded-full animate-spin mb-4"></div>
-              <h3 className="text-xl font-bold animate-pulse text-slate-900 dark:text-white">Locating drivers nearby...</h3>
-              <p className="text-gray-500 dark:text-gray-400 text-sm mt-2">Connecting to drivers within 5km</p>
-              <button onClick={() => { setWinchStatus('idle'); winchSocketRef.current?.disconnect(); }} className="mt-6 text-xs text-red-400 underline">Cancel</button>
+            <div className="flex flex-col items-center py-8 text-center">
+              {/* Animated pulse rings representing radar sweep */}
+              <div className="relative flex items-center justify-center mb-6 w-24 h-24">
+                <div className="absolute w-24 h-24 rounded-full border-2 border-cyber-primary/30 animate-ping-custom-1" />
+                <div className="absolute w-16 h-16 rounded-full border-2 border-cyber-primary/50 animate-ping-custom-2" />
+                <div className="w-10 h-10 border-4 border-cyber-primary border-t-transparent rounded-full animate-spin" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-1">Locating drivers nearby...</h3>
+              <div className="flex items-center gap-2 mt-1 mb-2">
+                <div className="w-2 h-2 rounded-full bg-cyber-primary animate-pulse" />
+                <p className="text-cyber-primary font-bold text-sm">Searching within {searchRadius} km</p>
+                {searchRadius < 30 && <p className="text-gray-400 text-xs">(expanding if no results)</p>}
+              </div>
+              <p className="text-gray-500 dark:text-gray-400 text-xs mb-6 max-w-xs">
+                {searchRadius <= 5
+                  ? 'Looking for the closest winch drivers in your area.'
+                  : searchRadius <= 15
+                  ? `No drivers found within ${searchRadius - 5} km. Expanding search...`
+                  : `Expanding search to find any available winch nearby.`}
+              </p>
+              {/* Progress steps */}
+              <div className="flex items-center gap-1 mb-6">
+                {[5, 10, 15, 20, 25, 30].map((step, idx) => (
+                  <div key={step} className="flex items-center gap-1">
+                    <div className={`w-2 h-2 rounded-full transition-all duration-500 ${searchRadius >= step ? 'bg-cyber-primary scale-125' : 'bg-gray-300 dark:bg-gray-600'}`} />
+                    {idx < 5 && <div className={`w-4 h-0.5 ${searchRadius > step ? 'bg-cyber-primary' : 'bg-gray-300 dark:bg-gray-600'}`} />}
+                  </div>
+                ))}
+              </div>
+              <button onClick={() => { cancelRadiusSearch(); setWinchStatus('idle'); }} className="text-xs text-red-400 underline">Cancel</button>
             </div>
           )}
 
-          {winchStatus === 'negotiating' && activeOffers.length === 0 && (
+          {winchStatus === 'no_drivers' && (
             <div className="flex flex-col items-center py-8 text-center">
-              <div className="w-16 h-16 bg-yellow-500/10 rounded-full flex items-center justify-center mb-4">
-                <span className="text-3xl">🚛</span>
+              <div className="w-20 h-20 bg-orange-500/10 rounded-full flex items-center justify-center mb-4">
+                <span className="text-4xl">🔍</span>
               </div>
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">No Drivers Online</h3>
-              <p className="text-gray-500 dark:text-gray-400 text-sm mb-6">There are no winch drivers available right now. Please try again shortly.</p>
-              <button onClick={requestWinch} className="bg-cyber-primary text-white px-6 py-3 rounded-xl font-bold">Try Again</button>
+              <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">No Winches Nearby</h3>
+              <p className="text-gray-500 dark:text-gray-400 text-sm mb-1 max-w-xs">
+                We searched up to <span className="font-bold text-cyber-primary">30 km</span> from your location and couldn't find any available winch drivers right now.
+              </p>
+              <p className="text-gray-400 text-xs mb-6">Please try again in a few minutes.</p>
+              <button onClick={requestWinch} className="bg-cyber-primary text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-blue-600 transition-colors">
+                Try Again
+              </button>
+              <button onClick={() => { cancelRadiusSearch(); setWinchStatus('idle'); }} className="mt-3 text-xs text-gray-400 underline">
+                Go Back
+              </button>
             </div>
           )}
+
 
           {winchStatus === 'negotiating' && (
             <div className="space-y-4">
@@ -3562,7 +3783,14 @@ const App: React.FC = () => {
                     <div>
                       <h4 className="font-bold text-slate-900 dark:text-white">{offer.driverName}</h4>
                       <p className="text-xs text-gray-500 dark:text-gray-400">{offer.vehicle} • {offer.rating} <Star className="inline w-3 h-3 text-yellow-500 fill-yellow-500" /></p>
-                      <p className="text-xs text-cyber-primary mt-1 font-bold">ETA: {offer.eta}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <p className="text-xs text-cyber-primary font-bold">ETA: {offer.eta}</p>
+                        {offer.distance && (
+                          <span className="text-xs bg-cyber-primary/10 text-cyber-primary px-2 py-0.5 rounded-full font-medium">
+                            📍 {offer.distance} away
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="text-right">
                       <span className={`text-xl font-bold ${offer.status === 'rejected' ? 'text-red-500 line-through' : 'text-slate-900 dark:text-white'}`}>{offer.price} EGP</span>
@@ -3965,7 +4193,7 @@ const App: React.FC = () => {
             {/* Live Job Board (Bidding) */}
             <div>
               <button 
-                onClick={() => setView(View.BIDDING_WORKSHOP)}
+                onClick={() => navigate(View.BIDDING_WORKSHOP)}
                 className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-4 rounded-xl flex items-center justify-between shadow-lg mb-6 hover:shadow-xl transition group"
               >
                 <div className="flex items-center gap-3">
@@ -4874,6 +5102,17 @@ const App: React.FC = () => {
               </span>
             )}
           </button>
+          <button
+            onClick={() => { setAdminActiveTab('approvals'); setAdminSearch(''); }}
+            className={`flex-shrink-0 flex-1 py-3 text-xs font-bold rounded-xl transition-all relative ${adminActiveTab === 'approvals' ? 'bg-purple-600 text-white shadow-lg' : 'glass-panel text-slate-600 dark:text-gray-400'}`}
+          >
+            Approvals
+            {adminUsers.filter(u => u.approvalStatus === 'PENDING').length > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center animate-pulse">
+                {adminUsers.filter(u => u.approvalStatus === 'PENDING').length}
+              </span>
+            )}
+          </button>
         </div>
 
         {/* Dashboard Content */}
@@ -4931,6 +5170,17 @@ const App: React.FC = () => {
                   <p className="text-xl font-bold mt-1 text-cyan-500 flex items-center gap-1">
                     <span className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
                     {adminStats ? adminStats.systemHealth : 'Active'}
+                  </p>
+                </div>
+
+                <div onClick={() => setAdminActiveTab('approvals')} className="glass-panel p-4 rounded-2xl border-l-4 border-purple-600 shadow-[0_0_15px_rgba(147,51,234,0.1)] cursor-pointer hover:bg-purple-500/5 transition-colors">
+                  <div className="text-purple-600 mb-2"><CheckCircle size={20} /></div>
+                  <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Pending Approvals</p>
+                  <p className="text-xl font-bold mt-1 text-purple-600 flex items-center gap-2">
+                    {adminUsers.filter(u => u.approvalStatus === 'PENDING').length} User(s)
+                    {adminUsers.filter(u => u.approvalStatus === 'PENDING').length > 0 && (
+                      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                    )}
                   </p>
                 </div>
               </div>
@@ -5259,7 +5509,7 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {adminActiveTab === ('approvals' as any) && (
+          {adminActiveTab === 'approvals' && (
             <div className="space-y-4 animate-in fade-in duration-300">
               <h3 className="font-bold text-lg text-slate-900 dark:text-white">Pending Provider Approvals</h3>
               <div className="space-y-4 pb-12">
@@ -5395,7 +5645,7 @@ const App: React.FC = () => {
         {showHistory && (
           <div className="absolute inset-0 z-[100] flex flex-col bg-slate-100 dark:bg-cyber-900 overflow-hidden">
             <div className="p-6 pt-12 flex items-center justify-between shadow-sm bg-white dark:bg-cyber-900 shrink-0">
-              <button onClick={() => setShowHistory(false)} className="p-2 rounded-full glass-panel text-slate-900 dark:text-white"><ArrowLeft size={20} /></button>
+              <button aria-label="Back" onClick={() => setShowHistory(false)} className="p-2 rounded-full glass-panel text-slate-900 dark:text-white"><ArrowLeft size={20} /></button>
               <h2 className="text-xl font-bold text-slate-900 dark:text-white">Recent Rides</h2>
               <div className="w-10"></div>
             </div>
@@ -5416,8 +5666,10 @@ const App: React.FC = () => {
               {rideHistory.filter(h => {
                 const date = new Date(h.createdAt);
                 const now = new Date();
-                const diffTime = Math.abs(now.getTime() - date.getTime());
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                const diffTime = now.getTime() - date.getTime();
+                const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+                const diffDays = Math.round((startOfToday.getTime() - startOfDate.getTime()) / (1000 * 60 * 60 * 24));
                 if (historyFilter === 'last24h') return diffTime <= 24 * 60 * 60 * 1000;
                 if (historyFilter === 'yesterday') return diffDays === 1;
                 if (historyFilter === '1week') return diffDays <= 7;
@@ -5471,7 +5723,7 @@ const App: React.FC = () => {
 
         {/* Dashboards */}
         {view === View.HOME && renderHome()}
-        {view === View.WINCH_DASHBOARD && user.role === UserRole.WINCH_DRIVER && renderWinchDashboard()}
+        {view === View.WINCH_DASHBOARD && user.role === UserRole.WINCH_DRIVER && <WinchDashboard />}
         {view === View.WINCH_DASHBOARD && user.role !== UserRole.WINCH_DRIVER && renderHome()}
         {view === View.WORKSHOP_DASHBOARD && user.role === UserRole.WORKSHOP_OWNER && renderWorkshopDashboard()}
         {view === View.WORKSHOP_DASHBOARD && user.role !== UserRole.WORKSHOP_OWNER && renderHome()}
@@ -5486,13 +5738,13 @@ const App: React.FC = () => {
         {view === View.PROFILE && renderProfile()}
         {view === View.SETTINGS && renderSettings()}
         {view === View.SPARE_PARTS && renderSpareParts()}
-        {view === View.WINCH_LIVE_MAP && liveBookingId && <WinchLiveUser bookingId={liveBookingId} onBack={() => { setLiveBookingId(null); setView(user.role === UserRole.WINCH_DRIVER ? View.WINCH_DASHBOARD : View.HOME); }} />}
+        {view === View.WINCH_LIVE_MAP && liveBookingId && <WinchLiveUser bookingId={liveBookingId} onBack={() => { setLiveBookingId(null); navigate(user.role === UserRole.WINCH_DRIVER ? View.WINCH_DASHBOARD : View.HOME); }} />}
         {/* Admin: only render if user has ADMIN role */}
         {view === View.ADMIN_DASHBOARD && (authUser?.role === 'ADMIN' || user.role === UserRole.ADMIN) && renderAdminDashboard()}
         {view === View.ADMIN_DASHBOARD && authUser?.role !== 'ADMIN' && user.role !== UserRole.ADMIN && renderHome()}
         
-        {view === View.BIDDING_USER && <BiddingUser onBack={() => setView(View.HOME)} />}
-        {view === View.BIDDING_WORKSHOP && <BiddingWorkshop onBack={() => setView(View.WORKSHOP_DASHBOARD)} />}
+        {view === View.BIDDING_USER && <BiddingUser onBack={() => navigate(View.HOME)} />}
+        {view === View.BIDDING_WORKSHOP && <BiddingWorkshop onBack={() => navigate(View.WORKSHOP_DASHBOARD)} />}
 
         {/* Global Wallet Top Up Modal Overlay */}
         {showTopUpModal && renderTopUpModal()}

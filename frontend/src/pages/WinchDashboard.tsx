@@ -13,11 +13,11 @@ export const WinchDashboard = () => {
   const [isOnline, setIsOnline] = React.useState(false);
   const [activeRequest, setActiveRequest] = React.useState<any | null>(null);
   const [activeBookingId, setActiveBookingId] = React.useState<string | null>(null);
+  const [bookingDetails, setBookingDetails] = React.useState<any | null>(null);
   const [driverLoc, setDriverLoc] = React.useState({ lat: 30.0500, lng: 31.2400 });
   const [userLoc, setUserLoc] = React.useState({ lat: 30.0444, lng: 31.2357 });
   const [timer, setTimer] = React.useState(30);
-  const [payLoading, setPayLoading] = React.useState(false);
-  const [payResult, setPayResult] = React.useState<{ success: boolean; message: string } | null>(null);
+  const [completedTripEarnings, setCompletedTripEarnings] = React.useState<{ price: number; paymentMethod: string } | null>(null);
   
   // History state
   const [history, setHistory] = React.useState<any[]>([]);
@@ -51,7 +51,8 @@ export const WinchDashboard = () => {
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      if (safeUser.id) socket.emit('register_user', safeUser.id);
+      const userId = localStorage.getItem('userId') || (user && user.id);
+      if (userId) socket.emit('register_user', userId);
     });
 
     // Incoming booking request from customer
@@ -61,9 +62,38 @@ export const WinchDashboard = () => {
     });
 
     // Booking was created (after accepting)
-    socket.on('booking_started', (data: { bookingId: string }) => {
+    socket.on('booking_started', (data: { bookingId: string; userLat?: number; userLng?: number }) => {
       setActiveBookingId(data.bookingId);
       setActiveRequest(null);
+    });
+
+    socket.on('booking_status', (data: { bookingId: string; status: string }) => {
+      setBookingDetails((prev: any) => {
+        if (prev && prev.id === data.bookingId) {
+          return { ...prev, status: data.status };
+        }
+        return prev;
+      });
+    });
+
+    socket.on('booking_cancelled', () => {
+      alert('Booking was cancelled by customer.');
+      setActiveBookingId(null);
+      setBookingDetails(null);
+      setIsOnline(false);
+    });
+
+    socket.on('booking_completed', (data: { paymentMethod: string }) => {
+      setBookingDetails((latestBooking: any) => {
+        setCompletedTripEarnings({
+          price: latestBooking?.price || 500,
+          paymentMethod: data.paymentMethod
+        });
+        return null;
+      });
+      setActiveBookingId(null);
+      setIsOnline(false);
+      refreshUser();
     });
 
     socket.on('booking_error', (data: any) => alert(data.message));
@@ -76,6 +106,34 @@ export const WinchDashboard = () => {
     return () => { socket.disconnect(); };
   }, []);
 
+  // Join the winch room whenever activeBookingId is set
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (activeBookingId && socket) {
+      socket.emit('join_winch_room', activeBookingId);
+    }
+  }, [activeBookingId]);
+
+  // Fetch active booking details when activeBookingId is set
+  useEffect(() => {
+    if (!activeBookingId) {
+      setBookingDetails(null);
+      return;
+    }
+
+    fetch(`${API_URL}/api/winch/location/${activeBookingId}`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data && !data.error) {
+        setBookingDetails(data);
+        if (data.userLat && data.userLng) setUserLoc({ lat: data.userLat, lng: data.userLng });
+      }
+    })
+    .catch(e => console.error('Error fetching booking details for driver:', e));
+  }, [activeBookingId]);
+
   // Countdown timer for incoming request
   useEffect(() => {
     if (!activeRequest) return;
@@ -83,6 +141,41 @@ export const WinchDashboard = () => {
     const t = setTimeout(() => setTimer(prev => prev - 1), 1000);
     return () => clearTimeout(t);
   }, [timer, activeRequest]);
+
+  // Start GPS streaming once booking is active
+  useEffect(() => {
+    const socket = socketRef.current;
+    if (!activeBookingId || !socket) return;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        setDriverLoc({ lat: latitude, lng: longitude });
+        
+        const currentStatus = bookingDetails?.status || 'Active';
+
+        socket.emit('update_location', {
+          bookingId: activeBookingId,
+          driverLat: latitude,
+          driverLng: longitude,
+          status: currentStatus === 'In Progress' ? 'Towing' : 'Driver En Route',
+        });
+      },
+      (err) => console.error('GPS error:', err),
+      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+    );
+    watchIdRef.current = watchId;
+
+    // Listen for customer location updates
+    socket.on('location_updated', (data: any) => {
+      if (data.userLat && data.userLng) setUserLoc({ lat: data.userLat, lng: data.userLng });
+    });
+
+    return () => {
+      if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
+      socket.off('location_updated');
+    };
+  }, [activeBookingId, bookingDetails?.status]);
 
   // Go online / offline
   const toggleOnline = () => {
@@ -122,6 +215,10 @@ export const WinchDashboard = () => {
       driverName: safeUser.name || 'Driver',
       vehicle: 'Flatbed Heavy-Duty',
       price: activeRequest.price,
+      pickupLat: activeRequest.pickupLat,
+      pickupLng: activeRequest.pickupLng,
+      dropoffLat: activeRequest.dropoffLat,
+      dropoffLng: activeRequest.dropoffLng,
     });
   };
 
@@ -132,38 +229,6 @@ export const WinchDashboard = () => {
     socket.emit('decline_request', { customerSocketId: activeRequest.customerSocketId });
     setActiveRequest(null);
   };
-
-  // Start GPS streaming once booking is active
-  useEffect(() => {
-    const socket = socketRef.current;
-    if (!activeBookingId || !socket) return;
-
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
-        setDriverLoc({ lat: latitude, lng: longitude });
-        socket.emit('update_location', {
-          bookingId: activeBookingId,
-          driverLat: latitude,
-          driverLng: longitude,
-          status: 'Driver En Route',
-        });
-      },
-      (err) => console.error('GPS error:', err),
-      { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-    );
-    watchIdRef.current = watchId;
-
-    // Listen for customer location updates
-    socket.on('location_updated', (data: any) => {
-      if (data.userLat && data.userLng) setUserLoc({ lat: data.userLat, lng: data.userLng });
-    });
-
-    return () => {
-      if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
-      socket.off('location_updated');
-    };
-  }, [activeBookingId]);
 
   const handleWithdraw = async () => {
     if (safeUser.walletBalance > 0) {
@@ -180,7 +245,7 @@ export const WinchDashboard = () => {
       {showHistory && (
         <div className="fixed inset-0 z-50 flex flex-col bg-slate-100 dark:bg-cyber-900">
           <div className="p-6 pt-12 flex items-center justify-between shadow-sm bg-white dark:bg-cyber-900">
-            <button onClick={() => setShowHistory(false)} className="p-2 rounded-full glass-panel text-slate-900 dark:text-white"><ArrowLeft size={20} /></button>
+            <button aria-label="Back" onClick={() => setShowHistory(false)} className="p-2 rounded-full glass-panel text-slate-900 dark:text-white"><ArrowLeft size={20} /></button>
             <h2 className="text-xl font-bold text-slate-900 dark:text-white">Recent Rides</h2>
             <div className="w-10"></div>
           </div>
@@ -201,8 +266,10 @@ export const WinchDashboard = () => {
             {history.filter(h => {
               const date = new Date(h.createdAt);
               const now = new Date();
-              const diffTime = Math.abs(now.getTime() - date.getTime());
-              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              const diffTime = now.getTime() - date.getTime();
+              const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+              const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+              const diffDays = Math.round((startOfToday.getTime() - startOfDate.getTime()) / (1000 * 60 * 60 * 24));
               if (historyFilter === 'last24h') return diffTime <= 24 * 60 * 60 * 1000;
               if (historyFilter === 'yesterday') return diffDays === 1;
               if (historyFilter === '1week') return diffDays <= 7;
@@ -217,7 +284,7 @@ export const WinchDashboard = () => {
                       <Clock size={14} className="text-cyber-primary" />
                       {new Date(trip.createdAt).toLocaleString()}
                     </h4>
-                    <p className="text-xs text-gray-500">Customer: {trip.userId}</p>
+                    <p className="text-xs text-gray-500">Customer ID: {trip.userId.substring(0, 8)}...</p>
                   </div>
                   <div className="text-right">
                     <span className="text-cyber-primary font-bold text-lg">{trip.price} EGP</span>
@@ -228,8 +295,7 @@ export const WinchDashboard = () => {
                 </div>
                 <div className="bg-slate-50 dark:bg-black/30 p-3 rounded-lg flex items-center justify-between text-xs text-slate-600 dark:text-gray-400">
                   <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"></span> Pickup</div>
-                    <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500"></span> Dropoff</div>
+                    <div className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"></span> Route Completed</div>
                   </div>
                   <div className="text-right">
                     Commission: <span className="text-red-500 font-bold">{(trip.price * 0.1).toFixed(2)} EGP</span>
@@ -245,8 +311,8 @@ export const WinchDashboard = () => {
       )}
 
       {showWinchWallet ? (
-        <div className="flex-1 p-6 pt-12 flex flex-col">
-          <button aria-label="Back" onClick={() => setShowWinchWallet(false)} className="mb-6 w-fit text-slate-900 dark:text-white"><ArrowLeft /></button>
+        <div className="flex-1 p-6 pt-12 flex flex-col bg-slate-50 dark:bg-slate-900">
+          <button aria-label="Go Back" title="Go Back" onClick={() => setShowWinchWallet(false)} className="mb-6 w-fit text-slate-900 dark:text-white"><ArrowLeft /></button>
           <h2 className="text-2xl font-bold font-display mb-6 text-slate-900 dark:text-white">Wallet</h2>
           <div className="glass-panel p-6 rounded-2xl bg-gradient-to-br from-cyber-primary to-blue-700 text-white mb-6">
             <p className="text-sm opacity-80">Total Balance</p>
@@ -255,34 +321,208 @@ export const WinchDashboard = () => {
           <button onClick={handleWithdraw} className="mt-auto w-full py-4 bg-cyber-primary text-white rounded-xl font-bold shadow-lg">Request Withdrawal</button>
         </div>
       ) : activeBookingId ? (
-        // ── LIVE NAVIGATION VIEW ───────────────────────────────────────────────
+        // ── LIVE NAVIGATION VIEW (LOCKED SCREEN) ───────────────────────────────────────────────
         <div className="flex-1 flex flex-col h-full bg-white relative">
           <div className="p-6 pt-12 flex items-center justify-between shadow-sm z-10 bg-white dark:bg-cyber-900">
-            <button aria-label="Back" onClick={() => { setActiveBookingId(null); setIsOnline(false); }} className="p-2 rounded-full glass-panel text-slate-900 dark:text-white">
-              <ArrowLeft size={20} />
-            </button>
+            {/* Back button removed to lock the navigation during trip */}
+            <div className="w-10" />
             <div className="text-center">
               <h2 className="text-xl font-bold font-display text-slate-900 dark:text-white">Live Navigation</h2>
-              <p className="text-xs text-green-500 font-bold">En Route to Customer</p>
+              <p className="text-xs text-cyber-primary font-bold">{bookingDetails?.status || 'Active'}</p>
             </div>
             <div className="w-10" />
           </div>
           <div className="flex-1 relative">
-            <LiveMap userLat={userLoc.lat} userLng={userLoc.lng} driverLat={driverLoc.lat} driverLng={driverLoc.lng} />
-            <div className="absolute bottom-6 left-6 right-6 glass-panel p-4 rounded-xl shadow-lg z-[1000] bg-white/90 dark:bg-gray-800/90 backdrop-blur-md flex justify-between items-center">
-              <div>
-                <h3 className="font-bold text-slate-900 dark:text-white">Customer Location</h3>
-                <p className="text-xs text-gray-500">Drive safely to your customer</p>
+            <LiveMap 
+              userLat={userLoc.lat} 
+              userLng={userLoc.lng} 
+              driverLat={driverLoc.lat} 
+              driverLng={driverLoc.lng} 
+              destLat={bookingDetails?.destLat}
+              destLng={bookingDetails?.destLng}
+              tripStatus={bookingDetails?.status}
+            />
+            
+            <div className="absolute bottom-6 left-6 right-6 glass-panel p-4 rounded-xl shadow-lg z-[99] bg-white/90 dark:bg-gray-800/90 backdrop-blur-md flex flex-col gap-3">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-slate-900 dark:text-white">
+                    {bookingDetails?.status === 'Active' ? 'Heading to Point A (Pickup)' : 
+                     bookingDetails?.status === 'Arrived' ? 'Arrived at Point A' : 
+                     bookingDetails?.status === 'In Progress' ? 'Heading to Point B (Drop-off)' : 
+                     'Payment Pending'}
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    {bookingDetails?.status === 'Active' ? 'Navigate to pickup location' : 
+                     bookingDetails?.status === 'Arrived' ? 'Verify customer car is loaded' : 
+                     bookingDetails?.status === 'In Progress' ? 'Towing vehicle to destination' : 
+                     'Waiting for customer payment...'}
+                  </p>
+                </div>
+                <span className="font-bold text-cyber-primary">{bookingDetails?.price || 0} EGP</span>
               </div>
-              <button onClick={() => {
-                if (socketRef.current && activeBookingId) {
-                  socketRef.current.emit('complete_booking', { bookingId: activeBookingId });
-                }
-                alert('Ride Completed! Your wallet has been credited.');
-                setActiveBookingId(null);
-                setIsOnline(false);
-                refreshUser();
-              }} className="bg-cyber-primary text-white px-4 py-2 rounded-lg font-bold">Arrived / Complete</button>
+              
+              {bookingDetails?.status === 'Active' && (
+                <button 
+                  onClick={() => {
+                    if (socketRef.current) {
+                      socketRef.current.emit('driver_arrived', { bookingId: activeBookingId });
+                    }
+                  }}
+                  className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition"
+                >
+                  Arrived at Customer (Point A)
+                </button>
+              )}
+
+              {bookingDetails?.status === 'Arrived' && (
+                <button 
+                  onClick={() => {
+                    if (socketRef.current) {
+                      socketRef.current.emit('pickup_done', { bookingId: activeBookingId });
+                    }
+                  }}
+                  className="w-full py-3 bg-cyber-primary hover:bg-blue-600 text-white font-bold rounded-xl transition animate-pulse"
+                >
+                  Pickup Done (Towing Started)
+                </button>
+              )}
+
+              {bookingDetails?.status === 'In Progress' && (
+                <button 
+                  onClick={() => {
+                    if (socketRef.current) {
+                      socketRef.current.emit('driver_complete_trip', { bookingId: activeBookingId });
+                    }
+                  }}
+                  className="w-full py-3 bg-green-500 hover:bg-green-600 text-white font-bold rounded-xl transition"
+                >
+                  Complete Trip (Arrived at Point B)
+                </button>
+              )}
+
+              {bookingDetails?.status === 'Payment_Pending' && (
+                <div className="text-center py-2 text-sm font-semibold text-amber-600 animate-pulse">
+                  ⌛ Waiting for customer payment to complete booking...
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : completedTripEarnings ? (
+        // ── EARNINGS SUMMARY OVERLAY ───────────────────────────────────────────
+        <div className="flex-1 flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-sm">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl p-6 shadow-2xl text-center">
+            <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center text-green-500 text-3xl mx-auto mb-4">
+              ✓
+            </div>
+            <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Trip Completed!</h3>
+            <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">Payment received. Here is your trip earnings summary.</p>
+
+            <div className="border-t border-b border-dashed border-slate-300 dark:border-slate-700 py-4 mb-6 space-y-3 text-left text-sm">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Total Price</span>
+                <span className="font-medium text-slate-900 dark:text-white">{completedTripEarnings.price} EGP</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Platform Commission (10%)</span>
+                <span className="font-medium text-red-500">-{(completedTripEarnings.price * 0.1).toFixed(2)} EGP</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Payment Mode</span>
+                <span className="font-medium text-slate-900 dark:text-white">{completedTripEarnings.paymentMethod}</span>
+              </div>
+              <div className="flex justify-between font-bold text-base pt-2 border-t border-slate-100 dark:border-slate-800">
+                <span className="text-slate-900 dark:text-white">Net Added to Wallet / Cash</span>
+                <span className="text-cyber-primary">{(completedTripEarnings.price * 0.9).toFixed(2)} EGP</span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setCompletedTripEarnings(null)}
+              className="w-full py-3 bg-cyber-primary text-white font-bold rounded-xl transition-all"
+            >
+              Back to Dashboard
+            </button>
+          </div>
+        </div>
+      ) : (isOnline && activeRequest) ? (
+        // ── FULLSCREEN REQUEST REVIEW SCREEN ──────────────────────────────────────────────
+        <div className="flex-1 flex flex-col h-full bg-white relative">
+          <div className="p-6 pt-12 flex items-center justify-between shadow-sm z-10 bg-white dark:bg-cyber-900">
+            <h2 className="text-xl font-bold font-display text-slate-900 dark:text-white">Incoming Request</h2>
+            <div className="p-2 bg-red-500 text-white text-xs font-bold rounded-lg animate-pulse">{timer}s remaining</div>
+          </div>
+          <div className="flex-1 relative">
+            <LiveMap 
+              userLat={activeRequest.pickupLat} 
+              userLng={activeRequest.pickupLng} 
+              destLat={activeRequest.dropoffLat} 
+              destLng={activeRequest.dropoffLng} 
+              tripStatus="Reviewing"
+            />
+            
+            <div className="absolute bottom-6 left-6 right-6 glass-panel p-4 rounded-xl shadow-lg z-[99] bg-white/95 dark:bg-gray-800/95 backdrop-blur-md flex flex-col gap-3">
+              <div>
+                <span className="bg-cyber-primary/25 text-cyber-primary text-xs font-bold px-2 py-0.5 rounded">NEW WINCH TRIP</span>
+                <h3 className="font-bold text-lg text-slate-900 dark:text-white mt-1">{activeRequest.car}</h3>
+                <p className="text-xs text-gray-500">{activeRequest.issue}</p>
+                <div className="flex justify-between items-center text-xs mt-2 text-slate-600 dark:text-gray-300 font-bold">
+                  <span>Distance</span>
+                  <span className="text-cyber-primary">{activeRequest.distance || 'Nearby'}</span>
+                </div>
+              </div>
+
+              {/* Price Negotiation adjustment controls */}
+              <div className="bg-slate-100 dark:bg-black/30 p-3 rounded-lg flex items-center justify-between">
+                <span className="text-sm font-bold text-slate-900 dark:text-white">Trip Fare:</span>
+                <div className="flex items-center gap-4">
+                  <button 
+                    onClick={() => setActiveRequest({ ...activeRequest, price: Math.max(100, activeRequest.price - 50) })}
+                    className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center font-bold text-slate-900 dark:text-white text-lg transition hover:bg-slate-300"
+                  >
+                    -
+                  </button>
+                  <span className="font-bold text-cyber-primary text-lg">{activeRequest.price} EGP</span>
+                  <button 
+                    onClick={() => setActiveRequest({ ...activeRequest, price: activeRequest.price + 50 })}
+                    className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center font-bold text-slate-900 dark:text-white text-lg transition hover:bg-slate-300"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <button 
+                  onClick={handleDecline} 
+                  className="flex-1 bg-slate-200 dark:bg-slate-700 py-3 rounded-xl font-bold text-slate-700 dark:text-white hover:bg-red-500 hover:text-white transition"
+                >
+                  Decline
+                </button>
+                <button 
+                  onClick={() => {
+                    if (socketRef.current) {
+                      socketRef.current.emit('driver_counter_offer', {
+                        customerSocketId: activeRequest.customerSocketId,
+                        driverId: socketRef.current.id,
+                        price: activeRequest.price
+                      });
+                      alert(`Counter offer of ${activeRequest.price} EGP sent! Waiting for customer...`);
+                      setTimer(30);
+                    }
+                  }}
+                  className="flex-1 bg-cyber-primary/20 text-cyber-primary border border-cyber-primary/30 py-3 rounded-xl font-bold hover:bg-cyber-primary/30 transition text-center"
+                >
+                  Counter Offer
+                </button>
+                <button 
+                  onClick={handleAccept} 
+                  className="flex-1 bg-cyber-primary text-white py-3 rounded-xl font-bold shadow-lg hover:bg-blue-600 transition"
+                >
+                  Accept
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -293,7 +533,7 @@ export const WinchDashboard = () => {
             <div className="flex justify-between items-start">
               <div>
                 <h2 className="text-2xl font-bold font-display">Winch Command</h2>
-                <p className="text-gray-400 text-sm">Welcome, {safeUser.name}</p>
+                <p className="text-gray-400 text-sm">Welcome back, {safeUser.name}</p>
               </div>
               <div onClick={() => navigate('/profile')} className="w-10 h-10 rounded-full bg-gray-700 border border-cyber-primary overflow-hidden cursor-pointer">
                 <img src="https://picsum.photos/100/100" alt="Profile" />
@@ -315,48 +555,12 @@ export const WinchDashboard = () => {
           </div>
 
           <div className="flex-1 p-6 space-y-6 overflow-y-auto">
-            {/* ── INCOMING REQUEST ──────────────────────────────────────────── */}
-            {isOnline && activeRequest ? (
-              <div className="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-md border-l-4 border-cyber-primary relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-2 bg-red-500 text-white text-[10px] font-bold rounded-bl-lg">{timer}s</div>
-                <span className="bg-cyber-primary/20 text-cyber-primary text-xs font-bold px-2 py-1 rounded inline-block mb-2">🔔 NEW REQUEST</span>
-                <h3 className="font-bold text-lg text-slate-900 dark:text-white">{activeRequest.car}</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-1 flex items-center gap-1"><MapPin size={14}/> {activeRequest.distance} away</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Customer: {activeRequest.customerName} • {activeRequest.issue}</p>
-
-                <div className="bg-slate-100 dark:bg-black/20 p-3 rounded-lg mb-4 flex items-center justify-between">
-                  <span className="text-sm font-bold text-slate-900 dark:text-white">Price:</span>
-                  <div className="flex items-center gap-3">
-                    <button onClick={() => setActiveRequest({...activeRequest, price: Math.max(100, activeRequest.price - 10)})} className="p-1 rounded bg-white/50 dark:bg-white/10 text-slate-900 dark:text-white font-bold">-</button>
-                    <span className="font-bold text-cyber-primary">{activeRequest.price} EGP</span>
-                    <button onClick={() => setActiveRequest({...activeRequest, price: activeRequest.price + 10})} className="p-1 rounded bg-white/50 dark:bg-white/10 text-slate-900 dark:text-white font-bold">+</button>
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <button onClick={handleDecline} className="flex-1 bg-gray-200 dark:bg-gray-700 py-2 rounded-lg font-bold text-slate-700 dark:text-white hover:bg-red-500 hover:text-white transition">Decline</button>
-                  <button onClick={() => {
-                    if (socketRef.current) {
-                      socketRef.current.emit('driver_counter_offer', {
-                        customerSocketId: activeRequest.customerSocketId,
-                        driverId: socketRef.current.id,
-                        price: activeRequest.price
-                      });
-                      alert(`Counter offer of ${activeRequest.price} EGP sent! Waiting for customer...`);
-                      setTimer(30);
-                    }
-                  }} className="flex-1 bg-cyber-primary/20 text-cyber-primary border border-cyber-primary/30 py-2 rounded-lg font-bold hover:bg-cyber-primary/40 transition">Counter</button>
-                  <button onClick={handleAccept} className="flex-1 bg-cyber-primary text-white py-2 rounded-lg font-bold shadow-lg hover:bg-blue-600 transition">Accept</button>
-                </div>
+            <div className="text-center py-10 text-gray-500">
+              <div className={`mx-auto w-fit mb-2 p-4 rounded-full ${isOnline ? 'bg-green-500/10 text-green-500 animate-pulse' : 'bg-gray-500/10'}`}>
+                <Power size={32} />
               </div>
-            ) : (
-              <div className="text-center py-10 text-gray-500">
-                <div className={`mx-auto w-fit mb-2 p-4 rounded-full ${isOnline ? 'bg-green-500/10 text-green-500 animate-pulse' : 'bg-gray-500/10'}`}>
-                  <Power size={32} />
-                </div>
-                <p>{isOnline ? 'Searching for requests...' : 'Go online to receive requests'}</p>
-              </div>
-            )}
+              <p>{isOnline ? 'Searching for requests...' : 'Go online to receive requests'}</p>
+            </div>
 
             {/* ── WALLET CARD ───────────────────────────────────────────────── */}
             <div className="glass-panel p-4 rounded-xl">
