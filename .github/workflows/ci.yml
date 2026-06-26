@@ -51,10 +51,14 @@ jobs:
         cd frontend
         npx tsc --noEmit
 
+    - name: Install Root Dependencies
+      run: |
+        npm ci
+
     - name: Build and test Frontend
       run: |
         cd frontend
-        npm ci
-        npx playwright install --with-deps
         npm run build
+        cd ..
+        npx playwright install --with-deps
         npx playwright test

@@ -5,7 +5,12 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev:frontend": "cd frontend && npm run dev",
+    "dev:frontend:3000": "cd frontend && npx vite --port 3000 --strictPort",
+    "dev:frontend:3001": "cd frontend && npx vite --port 3001 --strictPort",
+    "dev:frontend:3002": "cd frontend && npx vite --port 3002 --strictPort",
+    "dev:frontend:3003": "cd frontend && npx vite --port 3003 --strictPort",
+    "dev:frontend:3004": "cd frontend && npx vite --port 3004 --strictPort",
+    "dev:frontend": "concurrently \"npm run dev:frontend:3000\" \"npm run dev:frontend:3001\" \"npm run dev:frontend:3002\" \"npm run dev:frontend:3003\" \"npm run dev:frontend:3004\"",
     "dev:backend": "cd backend && npx tsx watch src/index.ts",
     "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
     "build": "npm install --prefix frontend && npm run build --prefix frontend && npm install --prefix backend && cd backend && npx prisma generate && npx tsc",
