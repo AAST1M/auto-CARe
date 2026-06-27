@@ -779,12 +779,13 @@ const App: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedWorkshop, setSelectedWorkshop] = useState<Workshop | null>(null);
   const [showFilter, setShowFilter] = useState(false);
-  const [filterCategory, setFilterCategory] = useState<string>('All');
+  const [filterService, setFilterService] = useState<string>('All');
+  const [filterSpecialty, setFilterSpecialty] = useState<string>('All');
 
   // Booking State — enhanced with 7-day calendar + slot conflict tracking
   const [selectedDateIndex, setSelectedDateIndex] = useState(0);
   const [selectedTimeSlot, setSelectedTimeSlot] = useState('09:00');
-  const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash'>('card');
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash' | 'wallet'>('card');
   const [bookedSlots, setBookedSlots] = useState<string[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
 
@@ -801,8 +802,10 @@ const App: React.FC = () => {
 
   // Wallet Top-Up Modal State
   const [showTopUpModal, setShowTopUpModal] = useState(false);
+  const [topUpStep, setTopUpStep] = useState(1);
   const [topUpAmount, setTopUpAmount] = useState('');
   const [topUpLoading, setTopUpLoading] = useState(false);
+  const [cardDetails, setCardDetails] = useState({ name: '', number: '', expiry: '', cvc: '' });
 
   // Workshop socket room ID (owner side)
   const [myWorkshopId, setMyWorkshopId] = useState<string | null>(null);
@@ -860,7 +863,8 @@ const App: React.FC = () => {
         carPhotoFront: authUser.carPhotoFront || prev.carPhotoFront,
         carPhotoBack: authUser.carPhotoBack || prev.carPhotoBack,
         carPhotoRight: authUser.carPhotoRight || prev.carPhotoRight,
-        carPhotoLeft: authUser.carPhotoLeft || prev.carPhotoLeft
+        carPhotoLeft: authUser.carPhotoLeft || prev.carPhotoLeft,
+        commissionOwed: authUser.commissionOwed ?? prev.commissionOwed
       }));
 
       setView(currentView => {
@@ -1483,6 +1487,26 @@ const App: React.FC = () => {
     }
   }, [user?.id, authContext.user?.id, winchSocket]);
 
+  // Listen for user appointment updates
+  useEffect(() => {
+    if (winchSocket) {
+      const handleApptUpdate = (updated: any) => {
+        setWorkshopAppointments(prev => prev.map(a => a.id === updated.id ? { ...a, status: updated.status, progress: updated.progress } : a));
+        // Only alert the user if they are not the workshop owner (workshop owners already get updates)
+        const currentRole = user?.role || authContext.user?.role;
+        if (currentRole !== 'WORKSHOP_OWNER') {
+          alert(`🚗 Workshop Update: Your car is now in ${updated.status}!`);
+        }
+      };
+
+      winchSocket.on('appointment_updated', handleApptUpdate);
+
+      return () => {
+        winchSocket.off('appointment_updated', handleApptUpdate);
+      };
+    }
+  }, [winchSocket, user?.role, authContext.user?.role]);
+
   // Workshop Real-time Socket.IO synchronization
   useEffect(() => {
     const socket = winchSocket;
@@ -1852,7 +1876,7 @@ const App: React.FC = () => {
   };
 
   // Workshop Dashboard Logic (Owner Side)
-  const handleWorkshopAction = async (id: string, action: 'Check-In' | 'Reschedule' | 'Accept' | 'Decline') => {
+  const handleWorkshopAction = async (id: string, action: 'Check-In' | 'Reschedule' | 'Accept' | 'Decline' | 'Complete') => {
     const tokenVal = localStorage.getItem('token');
     if (!tokenVal) return;
 
@@ -1860,6 +1884,7 @@ const App: React.FC = () => {
     if (action === 'Accept') newStatus = 'Confirmed';
     if (action === 'Decline') newStatus = 'Cancelled';
     if (action === 'Check-In') newStatus = 'Checked-In';
+    if (action === 'Complete') newStatus = 'Completed';
 
     if (newStatus) {
       try {
@@ -1900,22 +1925,35 @@ const App: React.FC = () => {
       if (action === 'Decline') {
         return { ...appt, status: 'Cancelled' as const };
       }
+      if (action === 'Complete') {
+        return { ...appt, status: 'Completed' as const };
+      }
       return appt;
     }));
   };
 
-  const updateCarStatus = (id: string) => {
-    setCarsInWorkshop(prev => prev.map(car => {
-      if (car.id === id) {
-        const newProgress = Math.min(100, car.progress + 25);
-        let status = car.status;
-        if (newProgress >= 25) status = 'Repairing';
-        if (newProgress >= 75) status = 'Quality Check';
-        if (newProgress >= 100) status = 'Ready';
-        return { ...car, progress: newProgress, status };
+  const updateCarStatus = async (id: string, currentProgress: number) => {
+    try {
+      const newProgress = Math.min(100, currentProgress + 25);
+      const res = await fetch(`${API_URL}/api/workshops/appointments/${id}/progress`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ progress: newProgress })
+      });
+      if (res.ok) {
+        // Also update locally for instant feedback
+        setWorkshopAppointments(prev => prev.map(a => 
+          a.id === id ? { ...a, progress: newProgress, status: newProgress >= 100 ? 'Ready' : a.status === 'Checked-In' && newProgress >= 25 ? 'Repairing' : a.status === 'Repairing' && newProgress >= 75 ? 'Quality Check' : a.status } : a
+        ));
+      } else {
+        throw new Error('Failed to update progress');
       }
-      return car;
-    }));
+    } catch (err) {
+      alert('Could not update status. Please try again.');
+    }
   };
 
   const handleWorkshopWithdraw = () => {
@@ -2036,44 +2074,73 @@ const App: React.FC = () => {
       <div className="w-full max-w-md bg-white dark:bg-cyber-900 rounded-t-3xl p-6 pb-10 shadow-2xl animate-in slide-in-from-bottom duration-300">
         <div className="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-6" />
         <h3 className="text-xl font-bold font-display text-slate-900 dark:text-white mb-1">Add Funds</h3>
-        <p className="text-sm text-gray-500 mb-6">Choose a preset amount or enter a custom value</p>
-
-        {/* Quick select amounts */}
-        <div className="grid grid-cols-4 gap-2 mb-4">
-          {[50, 100, 200, 500].map(amt => (
+        
+        {topUpStep === 1 ? (
+          <>
+            <p className="text-sm text-gray-500 mb-6">Enter your card details</p>
+            <div className="space-y-4 mb-6">
+              <input type="text" placeholder="Cardholder Name" value={cardDetails.name} onChange={e => setCardDetails({...cardDetails, name: e.target.value})} className="w-full p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-cyber-primary text-sm" />
+              <input type="text" placeholder="Card Number (e.g. 4111 1111 1111 1111)" value={cardDetails.number} onChange={e => setCardDetails({...cardDetails, number: e.target.value})} className="w-full p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-cyber-primary text-sm" />
+              <div className="flex gap-4">
+                <input type="text" placeholder="MM/YY" value={cardDetails.expiry} onChange={e => setCardDetails({...cardDetails, expiry: e.target.value})} className="flex-1 p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-cyber-primary text-sm" />
+                <input type="text" placeholder="CVC" value={cardDetails.cvc} onChange={e => setCardDetails({...cardDetails, cvc: e.target.value})} className="flex-1 p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-cyber-primary text-sm" />
+              </div>
+            </div>
             <button
-              key={amt}
-              onClick={() => setTopUpAmount(String(amt))}
-              className={`py-3 rounded-xl font-bold text-sm transition-all border ${topUpAmount === String(amt) ? 'bg-cyber-primary text-white border-cyber-primary' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-gray-700 text-slate-700 dark:text-white hover:border-cyber-primary'}`}
+              onClick={() => setTopUpStep(2)}
+              disabled={!cardDetails.name || !cardDetails.number || !cardDetails.expiry || !cardDetails.cvc}
+              className="w-full py-4 bg-gradient-to-r from-cyber-primary to-blue-600 text-white font-bold rounded-xl shadow-lg disabled:opacity-60 disabled:cursor-not-allowed transition"
             >
-              {amt} EGP
+              Continue
             </button>
-          ))}
-        </div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-gray-500 mb-6">Choose a preset amount or enter a custom value</p>
+            {/* Quick select amounts */}
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              {[50, 100, 200, 500].map(amt => (
+                <button
+                  key={amt}
+                  onClick={() => setTopUpAmount(String(amt))}
+                  className={`py-3 rounded-xl font-bold text-sm transition-all border ${topUpAmount === String(amt) ? 'bg-cyber-primary text-white border-cyber-primary' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-gray-700 text-slate-700 dark:text-white hover:border-cyber-primary'}`}
+                >
+                  {amt} EGP
+                </button>
+              ))}
+            </div>
 
-        <div className="relative mb-4">
-          <input
-            type="number"
-            placeholder="Custom amount..."
-            value={topUpAmount}
-            onChange={e => setTopUpAmount(e.target.value)}
-            className="w-full p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-cyber-primary text-sm"
-            id="topup-amount-input"
-          />
-          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-medium text-sm">EGP</span>
-        </div>
+            <div className="relative mb-4">
+              <input
+                type="number"
+                placeholder="Custom amount..."
+                value={topUpAmount}
+                onChange={e => setTopUpAmount(e.target.value)}
+                className="w-full p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-cyber-primary text-sm"
+                id="topup-amount-input"
+              />
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-medium text-sm">EGP</span>
+            </div>
+
+            <button
+              onClick={() => topUpAmount && Number(topUpAmount) > 0 && handleTopUp(Number(topUpAmount))}
+              disabled={topUpLoading || !topUpAmount || Number(topUpAmount) <= 0}
+              className="w-full py-4 bg-gradient-to-r from-cyber-primary to-blue-600 text-white font-bold rounded-xl shadow-lg disabled:opacity-60 disabled:cursor-not-allowed transition"
+              id="confirm-topup-btn"
+            >
+              {topUpLoading ? 'Processing...' : `Add ${topUpAmount ? `${topUpAmount} EGP` : 'Funds'}`}
+            </button>
+            <button
+              onClick={() => setTopUpStep(1)}
+              className="w-full mt-3 py-3 text-gray-500 font-medium rounded-xl hover:bg-gray-50 dark:hover:bg-slate-800 transition text-sm"
+            >
+              Back
+            </button>
+          </>
+        )}
 
         <button
-          onClick={() => topUpAmount && Number(topUpAmount) > 0 && handleTopUp(Number(topUpAmount))}
-          disabled={topUpLoading || !topUpAmount || Number(topUpAmount) <= 0}
-          className="w-full py-4 bg-gradient-to-r from-cyber-primary to-blue-600 text-white font-bold rounded-xl shadow-lg disabled:opacity-60 disabled:cursor-not-allowed transition"
-          id="confirm-topup-btn"
-        >
-          {topUpLoading ? 'Processing...' : `Add ${topUpAmount ? `${topUpAmount} EGP` : 'Funds'}`}
-        </button>
-
-        <button
-          onClick={() => { setShowTopUpModal(false); setTopUpAmount(''); }}
+          onClick={() => { setShowTopUpModal(false); setTopUpAmount(''); setTopUpStep(1); setCardDetails({ name: '', number: '', expiry: '', cvc: '' }); }}
           className="w-full mt-3 py-3 text-gray-500 font-medium rounded-xl hover:bg-gray-50 dark:hover:bg-slate-800 transition text-sm"
         >
           Cancel
@@ -3947,6 +4014,24 @@ const App: React.FC = () => {
                 {paymentMethod === 'cash' && <div className="w-2 h-2 bg-cyber-primary rounded-full"></div>}
               </div>
             </div>
+
+            <div
+              onClick={() => {
+                if (user.walletBalance >= 470) setPaymentMethod('wallet');
+              }}
+              className={`glass-panel p-4 rounded-xl flex items-center justify-between border transition-all ${user.walletBalance < 470 ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-cyber-primary/50'} ${paymentMethod === 'wallet' ? 'border-cyber-primary bg-cyber-primary/10' : 'border-transparent'}`}
+            >
+              <div className="flex items-center gap-3">
+                <Wallet className="text-cyber-primary" />
+                <div className="flex flex-col">
+                  <span className="font-bold text-sm text-slate-900 dark:text-white">Digital Wallet</span>
+                  <span className="text-xs text-gray-500">Balance: {user.walletBalance} EGP</span>
+                </div>
+              </div>
+              <div className={`w-4 h-4 rounded-full border border-cyber-primary p-0.5 flex items-center justify-center`}>
+                {paymentMethod === 'wallet' && <div className="w-2 h-2 bg-cyber-primary rounded-full"></div>}
+              </div>
+            </div>
           </div>
 
           <div className="mt-auto glass-panel p-4 rounded-xl space-y-2">
@@ -4218,22 +4303,37 @@ const App: React.FC = () => {
             <div>
               <h3 className="font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><Activity size={18} className="text-cyber-primary" /> Live Car Tracker</h3>
               <div className="space-y-3">
-                {carsInWorkshop.map(car => (
+                {workshopAppointments.filter(a => ['Checked-In', 'Repairing', 'Quality Check', 'Ready'].includes(a.status)).map(car => (
                   <div key={car.id} className="glass-panel p-4 rounded-xl">
                     <div className="flex justify-between items-center mb-2">
-                      <span className="font-bold text-sm text-slate-900 dark:text-white">{car.model}</span>
-                      <span className="text-xs text-gray-500">{car.plate}</span>
+                      <span className="font-bold text-sm text-slate-900 dark:text-white">{car.carDetails || 'Your Car'}</span>
+                      <span className="text-xs text-gray-500">{car.workshop?.name || 'Workshop'}</span>
                     </div>
                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-2">
-                      <div className={`bg-cyber-primary h-2 rounded-full transition-all duration-500 w-[${car.progress}%]`} />
+                      <div className="bg-cyber-primary h-2 rounded-full transition-all duration-500" style={{ width: `${car.progress || 0}%` }} />
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-xs font-bold text-cyber-primary">{car.status}</span>
-                      <button onClick={() => updateCarStatus(car.id)} className="text-xs bg-slate-200 dark:bg-gray-700 px-2 py-1 rounded hover:bg-cyber-primary hover:text-white transition">Update Status</button>
+                      {car.status !== 'Completed' && (
+                        <button 
+                          onClick={() => {
+                            if (car.progress && car.progress >= 100 || car.status === 'Ready') {
+                              handleWorkshopAction(car.id, 'Complete');
+                            } else {
+                              updateCarStatus(car.id, car.progress || 0);
+                            }
+                          }} 
+                          className="text-xs bg-slate-200 dark:bg-gray-700 px-3 py-1.5 rounded-lg hover:bg-cyber-primary hover:text-white transition font-bold"
+                        >
+                          {(car.progress || 0) < 25 ? 'Start Repair' : 
+                           (car.progress || 0) < 75 ? 'Start Quality Check' : 
+                           (car.progress || 0) < 100 ? 'Mark Ready' : 'Mark Claimed (Done)'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
-                {carsInWorkshop.length === 0 && <p className="text-gray-500 text-sm">No cars currently being serviced.</p>}
+                {workshopAppointments.filter(a => ['Checked-In', 'Repairing', 'Quality Check', 'Ready'].includes(a.status)).length === 0 && <p className="text-gray-500 text-sm">No cars currently being serviced.</p>}
               </div>
             </div>
 
@@ -4566,8 +4666,12 @@ const App: React.FC = () => {
       } else if (typeof w.services === 'string') {
         try { servicesList = JSON.parse(w.services); } catch { servicesList = (w.services as string).split(',').map(s => s.trim()); }
       }
-      return w.name?.toLowerCase().includes(searchTerm.toLowerCase()) &&
-      (filterCategory === 'All' || servicesList.some(s => s.toLowerCase().includes(filterCategory.toLowerCase())) || w.specialty?.toLowerCase().includes(filterCategory.toLowerCase()))
+      
+      const matchesSearch = !searchTerm || (w.name || '').toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesService = filterService === 'All' || servicesList.some(s => s.toLowerCase().includes(filterService.toLowerCase()));
+      const matchesSpecialty = filterSpecialty === 'All' || (w.specialty || '').toLowerCase().includes(filterSpecialty.toLowerCase());
+
+      return matchesSearch && matchesService && matchesSpecialty;
     });
 
     return (
@@ -4593,13 +4697,13 @@ const App: React.FC = () => {
 
           {showFilter && (
             <div className="mb-4 glass-panel p-4 rounded-xl animate-float">
-              <p className="font-bold text-sm mb-2 text-slate-900 dark:text-white">Filter by Category:</p>
+              <p className="font-bold text-sm mb-2 text-slate-900 dark:text-white">Car Specialty:</p>
               <div className="flex flex-wrap gap-2">
-                {['All', 'European', 'Electric', 'Body & Paint', 'Transmission'].map(cat => (
+                {['All', 'German Cars', 'Korean Cars', 'Japanese Cars', 'American Cars', 'European Cars'].map(cat => (
                   <button
                     key={cat}
-                    onClick={() => setFilterCategory(cat)}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold ${filterCategory === cat ? 'bg-cyber-primary text-white' : 'bg-slate-200 dark:bg-gray-700 text-gray-500'}`}
+                    onClick={() => setFilterSpecialty(cat)}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all ${filterSpecialty === cat ? 'bg-cyber-primary text-white' : 'bg-slate-200 dark:bg-gray-700 text-gray-500'}`}
                   >
                     {cat}
                   </button>
@@ -4609,8 +4713,8 @@ const App: React.FC = () => {
           )}
 
           <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-            {['All', 'Mechanical', 'Electrical', 'Bodywork', 'Tires'].map(cat => (
-              <button key={cat} onClick={() => setFilterCategory(cat === 'All' ? 'All' : cat)} className="px-4 py-2 glass-panel rounded-lg text-sm font-bold text-gray-500 hover:text-cyber-primary hover:border-cyber-primary transition-colors border border-transparent whitespace-nowrap">
+            {['All', 'Oil Change', 'Brake Pads', 'Suspension', 'Engine work', 'Mechanical', 'Electrical'].map(cat => (
+              <button key={cat} onClick={() => setFilterService(cat)} className={`px-4 py-2 glass-panel rounded-lg text-sm font-bold transition-colors border whitespace-nowrap ${filterService === cat ? 'border-cyber-primary text-cyber-primary' : 'border-transparent text-gray-500 hover:text-cyber-primary hover:border-cyber-primary'}`}>
                 {cat}
               </button>
             ))}
@@ -4871,6 +4975,59 @@ const App: React.FC = () => {
             <Plus size={14} /> Add Funds
           </button>
         </div>
+        
+        {/* Winch Commission Debt Card inside Profile */}
+        {user.role === UserRole.WINCH_DRIVER && (user.commissionOwed || 0) > 0 && (
+          <div className="glass-panel p-5 rounded-2xl mb-6 border border-red-200 dark:border-red-900/30 bg-red-50/50 dark:bg-red-950/10 flex flex-col gap-3">
+            <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+              <AlertTriangle size={18} />
+              <span className="font-bold text-sm">Outstanding Commission Debt</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-slate-500 text-xs">Unpaid Platform Dues</span>
+              <span className="font-bold text-red-600 dark:text-red-400">{(user.commissionOwed || 0).toFixed(2)} EGP</span>
+            </div>
+            <button
+              onClick={async () => {
+                if (user.walletBalance < (user.commissionOwed || 0)) {
+                  alert('Insufficient wallet balance to settle outstanding debt. Please top up first.');
+                  return;
+                }
+                try {
+                  const tokenVal = localStorage.getItem('token');
+                  const res = await fetch(`${API_URL}/api/wallet/settle-commission`, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${tokenVal || ''}`
+                    }
+                  });
+                  const data = await res.json();
+                  if (res.ok && data.success) {
+                    alert(data.message);
+                    await authContext.refreshUser();
+                    
+                    const resMe = await fetch(`${API_URL}/api/auth/me`, {
+                      headers: { 'Authorization': `Bearer ${tokenVal || ''}` }
+                    });
+                    if (resMe.ok) {
+                      const freshUser = await resMe.json();
+                      setUser(prev => ({ ...prev, walletBalance: freshUser.walletBalance, commissionOwed: freshUser.commissionOwed }));
+                    }
+                  } else {
+                    alert(data.error || 'Failed to settle commission debt.');
+                  }
+                } catch (err) {
+                  console.error('Error settling commission debt:', err);
+                  alert('Error settling commission debt.');
+                }
+              }}
+              className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-sm transition"
+            >
+              Settle Commission Debt
+            </button>
+          </div>
+        )}
 
         <div className="glass-panel p-4 rounded-xl mb-6">
           <div className="flex justify-between items-center mb-4">
@@ -4917,29 +5074,33 @@ const App: React.FC = () => {
           )}
         </div>
 
-        <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-4">Recent Bookings</h4>
-        <div className="space-y-4">
-          {user.bookings.length > 0 ? user.bookings.map(booking => (
-            <div key={booking.id} className="glass-panel p-4 rounded-xl">
-              <div className="flex justify-between items-start mb-2">
-                <div>
-                  <h5 className="font-bold text-slate-900 dark:text-white">{booking.serviceName}</h5>
-                  <p className="text-xs text-gray-500">{booking.date}</p>
+        {user?.role === 'USER' && (
+          <>
+            <h4 className="font-bold text-lg text-slate-900 dark:text-white mb-4">Recent Bookings</h4>
+            <div className="space-y-4">
+              {user.bookings.length > 0 ? user.bookings.map(booking => (
+                <div key={booking.id} className="glass-panel p-4 rounded-xl">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <h5 className="font-bold text-slate-900 dark:text-white">{booking.serviceName}</h5>
+                      <p className="text-xs text-gray-500">{booking.date}</p>
+                    </div>
+                    <span className={`text-xs font-bold px-2 py-1 rounded ${booking.status === 'Confirmed' ? 'bg-green-500/20 text-green-500' :
+                      booking.status === 'Completed' ? 'bg-blue-500/20 text-blue-500' :
+                        'bg-gray-500/20 text-gray-500'
+                      }`}>{booking.status}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-sm pt-2 border-t border-gray-200 dark:border-gray-700 mt-2">
+                    <span className="text-gray-500">Total Paid</span>
+                    <span className="font-bold text-slate-900 dark:text-white">{booking.price}</span>
+                  </div>
                 </div>
-                <span className={`text-xs font-bold px-2 py-1 rounded ${booking.status === 'Confirmed' ? 'bg-green-500/20 text-green-500' :
-                  booking.status === 'Completed' ? 'bg-blue-500/20 text-blue-500' :
-                    'bg-gray-500/20 text-gray-500'
-                  }`}>{booking.status}</span>
-              </div>
-              <div className="flex justify-between items-center text-sm pt-2 border-t border-gray-200 dark:border-gray-700 mt-2">
-                <span className="text-gray-500">Total Paid</span>
-                <span className="font-bold text-slate-900 dark:text-white">{booking.price}</span>
-              </div>
+              )) : (
+                <p className="text-center text-gray-500 py-4">No bookings yet.</p>
+              )}
             </div>
-          )) : (
-            <p className="text-center text-gray-500 py-4">No bookings yet.</p>
-          )}
-        </div>
+          </>
+        )}
       </div>
     </div>
   );

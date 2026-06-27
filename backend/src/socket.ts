@@ -185,11 +185,13 @@ export function setupSocket(io: Server) {
       pickupLng?: number;
       dropoffLat?: number;
       dropoffLng?: number;
+      priceIsAdjusted?: boolean;
     }) => {
       onlineDrivers.delete(socket.id);
       io.emit('drivers_updated', Array.from(onlineDrivers.values()));
 
       try {
+        const initialStatus = data.priceIsAdjusted ? 'Pending_Approval' : 'Active';
         const booking = await prisma.winchBooking.create({
           data: {
             userId: data.customerId,
@@ -197,7 +199,7 @@ export function setupSocket(io: Server) {
             driverName: data.driverName,
             vehicle: data.vehicle,
             price: data.price,
-            status: 'Active',
+            status: initialStatus,
             userLat: data.pickupLat,
             userLng: data.pickupLng,
             destLat: data.dropoffLat,
@@ -216,6 +218,7 @@ export function setupSocket(io: Server) {
             driverName: data.driverName,
             vehicle: data.vehicle,
             price: data.price,
+            status: initialStatus,
             userLat: data.pickupLat,
             userLng: data.pickupLng,
             destLat: data.dropoffLat,
@@ -226,15 +229,31 @@ export function setupSocket(io: Server) {
         socket.emit('booking_started', {
           bookingId,
           customerId: data.customerId,
+          status: initialStatus,
           userLat: data.pickupLat,
           userLng: data.pickupLng,
           destLat: data.dropoffLat,
           destLng: data.dropoffLng,
         });
-        console.log(`🚗 Booking ${bookingId} created with pickup/destination coordinates`);
+        console.log(`🚗 Booking ${bookingId} created with pickup/destination coordinates. Status: ${initialStatus}`);
       } catch (err) {
         console.error('Booking creation error:', err);
         socket.emit('booking_error', { message: 'Could not create booking.' });
+      }
+    });
+
+    // ── Owner Approves Price ────────────────────────────────────────────────────
+    socket.on('approve_booking_price', async (data: { bookingId: string }) => {
+      try {
+        const booking = await prisma.winchBooking.update({
+          where: { id: data.bookingId },
+          data: { status: 'Active' }
+        });
+        io.to(`winch_${data.bookingId}`).emit('booking_status', { bookingId: booking.id, status: 'Active' });
+        console.log(`Booking ${data.bookingId} approved by customer. Status: Active`);
+      } catch (err) {
+        console.error('approve_booking_price error:', err);
+        socket.emit('booking_error', { message: 'Could not approve booking price.' });
       }
     });
 
@@ -285,9 +304,13 @@ export function setupSocket(io: Server) {
           });
 
           // Calculate ETA if both coordinates exist
-          if (updatedBooking.userLat && updatedBooking.userLng && updatedBooking.driverLat && updatedBooking.driverLng) {
+          const isTowing = updatedBooking.status === 'In Progress';
+          const targetLat = isTowing ? updatedBooking.destLat : updatedBooking.userLat;
+          const targetLng = isTowing ? updatedBooking.destLng : updatedBooking.userLng;
+
+          if (targetLat && targetLng && updatedBooking.driverLat && updatedBooking.driverLng) {
             const distKm = calculateDistance(
-              updatedBooking.userLat, updatedBooking.userLng,
+              targetLat, targetLng,
               updatedBooking.driverLat, updatedBooking.driverLng
             );
             
@@ -383,16 +406,16 @@ export function setupSocket(io: Server) {
             return;
           }
 
-          await prisma.$transaction([
-            prisma.user.update({
+          await prisma.$transaction(async (tx) => {
+            await tx.user.update({
               where: { id: booking.userId },
               data: { walletBalance: { decrement: amount } }
-            }),
-            prisma.user.update({
+            });
+            await tx.user.update({
               where: { id: booking.driverId },
               data: { walletBalance: { increment: driverShare } }
-            }),
-            prisma.transaction.create({
+            });
+            await tx.transaction.create({
               data: {
                 userId: booking.userId,
                 providerId: booking.driverId,
@@ -401,19 +424,19 @@ export function setupSocket(io: Server) {
                 type: 'Winch Ride - Wallet',
                 status: 'Completed'
               }
-            }),
-            prisma.winchBooking.update({
+            });
+            await tx.winchBooking.update({
               where: { id: data.bookingId },
               data: { status: 'Completed' }
-            })
-          ]);
+            });
+          });
         } else if (data.paymentMethod === 'CARD') {
-          await prisma.$transaction([
-            prisma.user.update({
+          await prisma.$transaction(async (tx) => {
+            await tx.user.update({
               where: { id: booking.driverId },
               data: { walletBalance: { increment: driverShare } }
-            }),
-            prisma.transaction.create({
+            });
+            await tx.transaction.create({
               data: {
                 userId: booking.userId,
                 providerId: booking.driverId,
@@ -422,20 +445,20 @@ export function setupSocket(io: Server) {
                 type: 'Winch Ride - Card',
                 status: 'Completed'
               }
-            }),
-            prisma.winchBooking.update({
+            });
+            await tx.winchBooking.update({
               where: { id: data.bookingId },
               data: { status: 'Completed' }
-            })
-          ]);
+            });
+          });
         } else {
           // CASH payment
-          await prisma.$transaction([
-            prisma.user.update({
+          await prisma.$transaction(async (tx) => {
+            await tx.user.update({
               where: { id: booking.driverId },
               data: { commissionOwed: { increment: commission } }
-            }),
-            prisma.transaction.create({
+            });
+            await tx.transaction.create({
               data: {
                 userId: booking.userId,
                 providerId: booking.driverId,
@@ -444,15 +467,19 @@ export function setupSocket(io: Server) {
                 type: 'Winch Ride - Cash',
                 status: 'Completed'
               }
-            }),
-            prisma.winchBooking.update({
+            });
+            await tx.winchBooking.update({
               where: { id: data.bookingId },
               data: { status: 'Completed' }
-            })
-          ]);
+            });
+          });
         }
 
-        io.to(`winch_${data.bookingId}`).emit('booking_completed', { bookingId: data.bookingId, paymentMethod: data.paymentMethod });
+        io.to(`winch_${data.bookingId}`).emit('booking_completed', {
+          bookingId: data.bookingId,
+          paymentMethod: data.paymentMethod,
+          price: amount
+        });
         console.log(`Booking ${data.bookingId} paid successfully via ${data.paymentMethod}`);
       } catch (err) {
         console.error('pay_booking error:', err);

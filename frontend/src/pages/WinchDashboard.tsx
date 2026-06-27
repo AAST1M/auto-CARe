@@ -10,6 +10,9 @@ export const WinchDashboard = () => {
   const navigate = useNavigate();
   const { user, refreshUser } = useAuth();
   const [showWinchWallet, setShowWinchWallet] = React.useState(false);
+  const [showWithdrawModal, setShowWithdrawModal] = React.useState(false);
+  const [withdrawAmount, setWithdrawAmount] = React.useState('');
+  const [withdrawLoading, setWithdrawLoading] = React.useState(false);
   const [isOnline, setIsOnline] = React.useState(false);
   const [activeRequest, setActiveRequest] = React.useState<any | null>(null);
   const [activeBookingId, setActiveBookingId] = React.useState<string | null>(null);
@@ -18,6 +21,9 @@ export const WinchDashboard = () => {
   const [userLoc, setUserLoc] = React.useState({ lat: 30.0444, lng: 31.2357 });
   const [timer, setTimer] = React.useState(30);
   const [completedTripEarnings, setCompletedTripEarnings] = React.useState<{ price: number; paymentMethod: string } | null>(null);
+  const [eta, setEta] = React.useState<string>('');
+  const [distance, setDistance] = React.useState<string>('');
+  const [destAddress, setDestAddress] = React.useState<string>('Point B (Drop-off)');
   
   // History state
   const [history, setHistory] = React.useState<any[]>([]);
@@ -57,14 +63,21 @@ export const WinchDashboard = () => {
 
     // Incoming booking request from customer
     socket.on('new_request', (data: any) => {
-      setActiveRequest(data);
+      setActiveRequest({
+        ...data,
+        originalPrice: data.price
+      });
       setTimer(30);
+      setDistance('');
+      setEta('');
     });
 
     // Booking was created (after accepting)
     socket.on('booking_started', (data: { bookingId: string; userLat?: number; userLng?: number }) => {
       setActiveBookingId(data.bookingId);
       setActiveRequest(null);
+      setDistance('');
+      setEta('');
     });
 
     socket.on('booking_status', (data: { bookingId: string; status: string }) => {
@@ -83,17 +96,21 @@ export const WinchDashboard = () => {
       setIsOnline(false);
     });
 
-    socket.on('booking_completed', (data: { paymentMethod: string }) => {
-      setBookingDetails((latestBooking: any) => {
-        setCompletedTripEarnings({
-          price: latestBooking?.price || 500,
-          paymentMethod: data.paymentMethod
-        });
-        return null;
+    socket.on('booking_completed', (data: { paymentMethod: string; price: number }) => {
+      setCompletedTripEarnings({
+        price: data.price,
+        paymentMethod: data.paymentMethod
       });
+      setBookingDetails(null);
       setActiveBookingId(null);
       setIsOnline(false);
       refreshUser();
+    });
+
+    socket.on('location_updated', (data: any) => {
+      if (data.userLat && data.userLng) setUserLoc({ lat: data.userLat, lng: data.userLng });
+      if (data.eta) setEta(data.eta);
+      if (data.distance) setDistance(data.distance);
     });
 
     socket.on('booking_error', (data: any) => alert(data.message));
@@ -128,6 +145,14 @@ export const WinchDashboard = () => {
     .then(data => {
       if (data && !data.error) {
         setBookingDetails(data);
+        if (data.destLat && data.destLng && (window as any).google?.maps?.Geocoder) {
+          const geocoder = new (window as any).google.maps.Geocoder();
+          geocoder.geocode({ location: { lat: data.destLat, lng: data.destLng } }, (results: any, status: any) => {
+            if (status === (window as any).google.maps.GeocoderStatus.OK && results && results[0]) {
+              setDestAddress(results[0].formatted_address.split(',')[0] || 'Point B (Drop-off)');
+            }
+          });
+        }
         if (data.userLat && data.userLng) setUserLoc({ lat: data.userLat, lng: data.userLng });
       }
     })
@@ -219,6 +244,7 @@ export const WinchDashboard = () => {
       pickupLng: activeRequest.pickupLng,
       dropoffLat: activeRequest.dropoffLat,
       dropoffLng: activeRequest.dropoffLng,
+      priceIsAdjusted: activeRequest.price !== activeRequest.originalPrice
     });
   };
 
@@ -230,12 +256,46 @@ export const WinchDashboard = () => {
     setActiveRequest(null);
   };
 
-  const handleWithdraw = async () => {
-    if (safeUser.walletBalance > 0) {
-      alert(`Withdrawal request for ${safeUser.walletBalance} EGP sent to your bank.`);
+  const handleWithdraw = async (amount: number) => {
+    if (amount <= 0 || amount > safeUser.walletBalance) {
+      alert('Invalid withdrawal amount.');
+      return;
+    }
+    setWithdrawLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/wallet/withdraw`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ amount })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to withdraw');
+      alert(data.message || `Withdrawal request for ${amount} EGP sent.`);
+      setShowWithdrawModal(false);
+      setWithdrawAmount('');
       await refreshUser();
-    } else {
-      alert('No funds to withdraw.');
+    } catch (e: any) {
+      alert(e.message);
+    } finally {
+      setWithdrawLoading(false);
+    }
+  };
+
+  const handleSettleDebt = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/wallet/settle-commission`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to settle debt');
+      alert('Debt settled successfully!');
+      refreshUser();
+    } catch (e: any) {
+      alert(e.message);
     }
   };
 
@@ -318,7 +378,26 @@ export const WinchDashboard = () => {
             <p className="text-sm opacity-80">Total Balance</p>
             <p className="text-4xl font-bold">{safeUser.walletBalance?.toLocaleString()} EGP</p>
           </div>
-          <button onClick={handleWithdraw} className="mt-auto w-full py-4 bg-cyber-primary text-white rounded-xl font-bold shadow-lg">Request Withdrawal</button>
+
+          {commissionOwed > 0 && (
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 rounded-xl mb-6 flex flex-col gap-3">
+              <div className="flex justify-between items-center">
+                <span className="font-bold text-red-700 dark:text-red-400">Commission Debt</span>
+                <span className="font-bold text-red-700 dark:text-red-400">{commissionOwed} EGP</span>
+              </div>
+              <p className="text-xs text-red-600 dark:text-red-500">
+                You must settle this debt using your wallet balance before you can receive new requests.
+              </p>
+              <button 
+                onClick={handleSettleDebt}
+                className="w-full py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition"
+              >
+                Settle Debt Now
+              </button>
+            </div>
+          )}
+
+          <button onClick={() => setShowWithdrawModal(true)} className="mt-auto w-full py-4 bg-cyber-primary text-white rounded-xl font-bold shadow-lg">Request Withdrawal</button>
         </div>
       ) : activeBookingId ? (
         // ── LIVE NAVIGATION VIEW (LOCKED SCREEN) ───────────────────────────────────────────────
@@ -341,27 +420,54 @@ export const WinchDashboard = () => {
               destLat={bookingDetails?.destLat}
               destLng={bookingDetails?.destLng}
               tripStatus={bookingDetails?.status}
+              onRouteUpdate={({ distance, eta }) => {
+                setDistance(distance);
+                setEta(eta);
+              }}
             />
             
-            <div className="absolute bottom-6 left-6 right-6 glass-panel p-4 rounded-xl shadow-lg z-[99] bg-white/90 dark:bg-gray-800/90 backdrop-blur-md flex flex-col gap-3">
-              <div className="flex justify-between items-center">
+            <div className="absolute bottom-6 left-6 right-6 glass-panel p-4 rounded-xl shadow-lg z-[99] bg-white/95 dark:bg-gray-800/95 backdrop-blur-md flex flex-col gap-3">
+              <div className="flex justify-between items-center border-b border-gray-100 dark:border-gray-700 pb-2">
                 <div>
                   <h3 className="font-bold text-slate-900 dark:text-white">
-                    {bookingDetails?.status === 'Active' ? 'Heading to Point A (Pickup)' : 
+                    {bookingDetails?.status === 'Pending_Approval' ? 'Pending Price Approval' :
+                     bookingDetails?.status === 'Active' ? 'Heading to Point A (Pickup)' : 
                      bookingDetails?.status === 'Arrived' ? 'Arrived at Point A' : 
-                     bookingDetails?.status === 'In Progress' ? 'Heading to Point B (Drop-off)' : 
+                     bookingDetails?.status === 'In Progress' ? `Heading to ${destAddress}` : 
                      'Payment Pending'}
                   </h3>
                   <p className="text-xs text-gray-500">
-                    {bookingDetails?.status === 'Active' ? 'Navigate to pickup location' : 
+                    {bookingDetails?.status === 'Pending_Approval' ? 'Waiting for customer to approve rate' :
+                     bookingDetails?.status === 'Active' ? 'Navigate to pickup location' : 
                      bookingDetails?.status === 'Arrived' ? 'Verify customer car is loaded' : 
                      bookingDetails?.status === 'In Progress' ? 'Towing vehicle to destination' : 
                      'Waiting for customer payment...'}
                   </p>
                 </div>
-                <span className="font-bold text-cyber-primary">{bookingDetails?.price || 0} EGP</span>
+                <div className="text-right">
+                  <p className="text-xs text-gray-400">Total Price</p>
+                  <span className="font-bold text-cyber-primary">{bookingDetails?.price || 0} EGP</span>
+                </div>
+              </div>
+
+              {/* Synchronized ETA and Distance Display */}
+              <div className="grid grid-cols-2 gap-4 text-center py-1">
+                <div className="bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-lg border border-gray-105 dark:border-gray-850">
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-medium">Remaining Time (ETA)</span>
+                  <span className="text-base font-bold text-slate-800 dark:text-white" id="driver-eta-value">{eta || 'Calculating...'}</span>
+                </div>
+                <div className="bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-lg border border-gray-105 dark:border-gray-850">
+                  <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-medium">Remaining Distance</span>
+                  <span className="text-base font-bold text-slate-800 dark:text-white" id="driver-distance-value">{distance || 'Calculating...'}</span>
+                </div>
               </div>
               
+              {bookingDetails?.status === 'Pending_Approval' && (
+                <div className="text-center py-3 bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400 font-bold rounded-xl text-sm animate-pulse">
+                  ⌛ Waiting for customer to approve the price of {bookingDetails?.price} EGP...
+                </div>
+              )}
+
               {bookingDetails?.status === 'Active' && (
                 <button 
                   onClick={() => {
@@ -397,7 +503,7 @@ export const WinchDashboard = () => {
                   }}
                   className="w-full py-3 bg-green-500 hover:bg-green-600 text-white font-bold rounded-xl transition"
                 >
-                  Complete Trip (Arrived at Point B)
+                  Complete Trip (End Trip / إنهاء)
                 </button>
               )}
 
@@ -460,6 +566,10 @@ export const WinchDashboard = () => {
               destLat={activeRequest.dropoffLat} 
               destLng={activeRequest.dropoffLng} 
               tripStatus="Reviewing"
+              onRouteUpdate={({ distance, eta }) => {
+                setDistance(distance);
+                setEta(eta);
+              }}
             />
             
             <div className="absolute bottom-6 left-6 right-6 glass-panel p-4 rounded-xl shadow-lg z-[99] bg-white/95 dark:bg-gray-800/95 backdrop-blur-md flex flex-col gap-3">
@@ -585,6 +695,42 @@ export const WinchDashboard = () => {
             <button className="text-gray-400 flex flex-col items-center" onClick={() => navigate('/profile')}><User size={24}/><span className="text-[10px]">Profile</span></button>
           </div>
         </>
+      )}
+
+      {showWithdrawModal && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-white dark:bg-cyber-900 rounded-t-3xl p-6 pb-10 shadow-2xl animate-in slide-in-from-bottom duration-300">
+            <div className="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-6" />
+            <h3 className="text-xl font-bold font-display text-slate-900 dark:text-white mb-1">Withdraw Funds</h3>
+            <p className="text-sm text-gray-500 mb-6">Enter the amount you wish to withdraw</p>
+
+            <div className="relative mb-4">
+              <input
+                type="number"
+                placeholder="Amount..."
+                value={withdrawAmount}
+                onChange={e => setWithdrawAmount(e.target.value)}
+                className="w-full p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-cyber-primary text-sm"
+              />
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-medium text-sm">EGP</span>
+            </div>
+
+            <button
+              onClick={() => withdrawAmount && Number(withdrawAmount) > 0 && handleWithdraw(Number(withdrawAmount))}
+              disabled={withdrawLoading || !withdrawAmount || Number(withdrawAmount) <= 0 || Number(withdrawAmount) > safeUser.walletBalance}
+              className="w-full py-4 bg-gradient-to-r from-cyber-primary to-blue-600 text-white font-bold rounded-xl shadow-lg disabled:opacity-60 disabled:cursor-not-allowed transition"
+            >
+              {withdrawLoading ? 'Processing...' : `Withdraw ${withdrawAmount ? `${withdrawAmount} EGP` : ''}`}
+            </button>
+
+            <button
+              onClick={() => { setShowWithdrawModal(false); setWithdrawAmount(''); }}
+              className="w-full mt-3 py-3 text-gray-500 font-medium rounded-xl hover:bg-gray-50 dark:hover:bg-slate-800 transition text-sm"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

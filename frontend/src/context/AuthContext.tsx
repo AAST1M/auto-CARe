@@ -78,7 +78,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshUser = async () => {
     const storedToken = localStorage.getItem('token');
-    if (!storedToken) return;
+    if (!storedToken) return null;
     try {
       const res = await fetch(`${API_URL}/api/auth/me`, {
         headers: { 'Authorization': `Bearer ${storedToken}` }
@@ -86,10 +86,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (res.ok) {
         const userData = await res.json();
         setUser(userData);
+        return userData;
       }
     } catch (err) {
       console.error('Error refreshing user profile:', err);
     }
+    return null;
   };
 
   useEffect(() => {

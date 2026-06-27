@@ -112,7 +112,13 @@ test.describe('Winch Tracking E2E', () => {
     // Accept request at the negotiated price
     await driverPage.click('button:has-text("Accept")');
 
-    // --- 5. VERIFY LIVE NAVIGATION & CANCELLATION BUTTON STATE ---
+    // --- 5. CUSTOMER PRICE APPROVAL ---
+    // The customer should see the price approval modal because the price was changed
+    await expect(userPage.locator('h3', { hasText: 'Price Adjustment' })).toBeVisible({ timeout: 15000 });
+    // Customer accepts the new price
+    await userPage.click('button:has-text("Accept")');
+
+    // --- 6. VERIFY LIVE NAVIGATION & CANCELLATION BUTTON STATE ---
     // Both pages should transition to live navigation map
     await expect(driverPage.locator('h2', { hasText: 'Live Navigation' })).toBeVisible({ timeout: 15000 });
     await expect(userPage.locator('h2', { hasText: 'Live Tracking' })).toBeVisible({ timeout: 15000 });
@@ -120,7 +126,7 @@ test.describe('Winch Tracking E2E', () => {
     // Customer cancellation button is active
     await expect(userPage.locator('button:has-text("Cancel Booking")')).toBeVisible();
 
-    // --- 6. SEQUENTIAL CONFIRMATION STEPS ---
+    // --- 7. SEQUENTIAL CONFIRMATION STEPS ---
     // Driver: Arrived at Customer (Point A)
     await driverPage.click('button:has-text("Arrived at Customer")');
     await expect(driverPage.locator('p.text-cyber-primary', { hasText: 'Arrived' })).toBeVisible();
@@ -136,7 +142,7 @@ test.describe('Winch Tracking E2E', () => {
     await driverPage.click('button:has-text("Complete Trip")');
     await expect(driverPage.locator('text=Waiting for customer payment to complete booking').first()).toBeVisible();
 
-    // --- 7. PAYMENT FLOW & INVOICE ---
+    // --- 8. PAYMENT FLOW & INVOICE ---
     // Customer sees Trip Invoice modal
     await expect(userPage.locator('h3', { hasText: 'Trip Invoice' })).toBeVisible({ timeout: 10000 });
     

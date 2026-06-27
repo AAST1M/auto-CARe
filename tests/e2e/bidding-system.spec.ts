@@ -14,11 +14,11 @@ test.describe('Bidding System E2E', () => {
     await expect(userPage.locator('h2', { hasText: 'Welcome Back' })).toBeVisible({ timeout: 10000 });
     await userPage.click('a:has-text("Sign Up")');
     await expect(userPage.locator('h2', { hasText: 'Create Account' })).toBeVisible({ timeout: 10000 });
-    await userPage.fill('input[placeholder="Full Name"]', 'Test Normal User');
-    await userPage.fill('input[type="email"]', userEmail);
-    await userPage.fill('input[placeholder^="Password"]', 'Password123!');
-    await userPage.fill('input[placeholder="Confirm Password"]', 'Password123!');
-    await userPage.click('button:has-text("Continue")');
+    await userPage.fill('#signup-name', 'Test Normal User');
+    await userPage.fill('#signup-email', userEmail);
+    await userPage.fill('#signup-password', 'Password123!');
+    await userPage.fill('#signup-confirm-password', 'Password123!');
+    await userPage.click('#signup-submit');
 
     // Wait for User Dashboard
     await expect(userPage.locator('text=Core Services')).toBeVisible({ timeout: 10000 });
@@ -52,15 +52,15 @@ test.describe('Bidding System E2E', () => {
     await expect(workshopPage.locator('h2', { hasText: 'Welcome Back' })).toBeVisible({ timeout: 10000 });
     await workshopPage.click('a:has-text("Sign Up")');
     await expect(workshopPage.locator('h2', { hasText: 'Create Account' })).toBeVisible({ timeout: 10000 });
-    await workshopPage.fill('input[placeholder="Full Name"]', 'Test Workshop Owner');
-    await workshopPage.fill('input[type="email"]', workshopEmail);
-    await workshopPage.fill('input[placeholder^="Password"]', 'Password123!');
-    await workshopPage.fill('input[placeholder="Confirm Password"]', 'Password123!');
-    await workshopPage.selectOption('select[aria-label="Account Type"]', 'WORKSHOP_OWNER');
-    await workshopPage.click('button:has-text("Continue")');
+    await workshopPage.fill('#signup-name', 'Test Workshop Owner');
+    await workshopPage.fill('#signup-email', workshopEmail);
+    await workshopPage.fill('#signup-password', 'Password123!');
+    await workshopPage.fill('#signup-confirm-password', 'Password123!');
+    await workshopPage.selectOption('#signup-role', 'WORKSHOP_OWNER');
+    await workshopPage.click('#signup-submit');
 
     // Wait for Workshop Dashboard to load
-    await expect(workshopPage.locator('text=Active Bookings')).toBeVisible({ timeout: 10000 });
+    await expect(workshopPage.locator('text=Verified Partner')).toBeVisible({ timeout: 15000 });
     
     // Navigate to Live Job Board
     await workshopPage.click('text=Live Job Board');

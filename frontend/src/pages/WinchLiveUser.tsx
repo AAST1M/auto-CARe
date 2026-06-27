@@ -28,6 +28,8 @@ export const WinchLiveUser: React.FC<WinchLiveUserProps> = ({ bookingId, onBack 
     vehicle?: string;
   }>({ status: 'Locating...' });
 
+  const [destAddress, setDestAddress] = useState<string>('Point B (Drop-off)');
+
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'WALLET' | 'CARD' | null>(null);
@@ -60,6 +62,14 @@ export const WinchLiveUser: React.FC<WinchLiveUserProps> = ({ bookingId, onBack 
         }));
         if (data.status === 'Payment_Pending') {
           setShowPaymentModal(true);
+        }
+        if (data.destLat && data.destLng && (window as any).google?.maps?.Geocoder) {
+          const geocoder = new (window as any).google.maps.Geocoder();
+          geocoder.geocode({ location: { lat: data.destLat, lng: data.destLng } }, (results: any, status: any) => {
+            if (status === (window as any).google.maps.GeocoderStatus.OK && results && results[0]) {
+              setDestAddress(results[0].formatted_address.split(',')[0] || 'Point B (Drop-off)');
+            }
+          });
         }
       }
     })
@@ -208,7 +218,7 @@ export const WinchLiveUser: React.FC<WinchLiveUserProps> = ({ bookingId, onBack 
       alert('Please select a payment method.');
       return;
     }
-    if (paymentMethod === 'WALLET' && user && user.walletBalance < (location.price || 0)) {
+    if (paymentMethod === 'WALLET' && (!user || user.walletBalance <= 0 || user.walletBalance < (location.price || 0))) {
       alert('Insufficient wallet balance. Please top up or select another method.');
       return;
     }
@@ -250,29 +260,59 @@ export const WinchLiveUser: React.FC<WinchLiveUserProps> = ({ bookingId, onBack 
           destLat={location.destLat}
           destLng={location.destLng}
           tripStatus={location.status}
+          onRouteUpdate={({ distance, eta }) => {
+            setLocation(prev => ({
+              ...prev,
+              distance,
+              eta
+            }));
+          }}
         />
         
         {/* Info overlay based on role */}
         <div className="absolute bottom-6 left-6 right-6 glass-panel p-4 rounded-xl shadow-lg z-[99] bg-white/90 dark:bg-gray-800/90 backdrop-blur-md">
           {isDriver ? (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-cyber-primary/20 flex items-center justify-center text-cyber-primary text-xl">
-                  👤
+            <div className="flex flex-col gap-2 w-full">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-full bg-cyber-primary/20 flex items-center justify-center text-cyber-primary text-xl">
+                    👤
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900 dark:text-white">Customer Location</h3>
+                    <p className="text-xs text-gray-500">
+                      {location.distance ? `${location.distance} away` : 'Drive safely to your customer.'}
+                      {location.eta && ` • ETA: ${location.eta}`}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-bold text-slate-900 dark:text-white">Customer Location</h3>
-                  <p className="text-xs text-gray-500">
-                    {location.distance ? `${location.distance} away` : 'Drive safely to your customer.'}
-                  </p>
-                </div>
+                {location.status === 'Active' ? (
+                  <button 
+                    onClick={() => {
+                      if (socketRef.current) socketRef.current.emit('driver_arrived', { bookingId });
+                    }}
+                    className="px-4 py-2 bg-yellow-500 text-white font-bold rounded-lg shadow hover:bg-yellow-600 transition-colors"
+                  >
+                    Arrived at Pickup
+                  </button>
+                ) : location.status === 'Arrived' ? (
+                  <button 
+                    onClick={() => {
+                      if (socketRef.current) socketRef.current.emit('pickup_done', { bookingId });
+                    }}
+                    className="px-4 py-2 bg-green-500 text-white font-bold rounded-lg shadow hover:bg-green-600 transition-colors"
+                  >
+                    Start Tow
+                  </button>
+                ) : location.status === 'In Progress' ? (
+                  <button 
+                    onClick={handleCompleteTow}
+                    className="px-4 py-2 bg-cyber-primary text-white font-bold rounded-lg shadow hover:bg-blue-600 transition-colors"
+                  >
+                    Complete Trip
+                  </button>
+                ) : null}
               </div>
-              <button 
-                onClick={handleCompleteTow}
-                className="px-4 py-2 bg-cyber-primary text-white font-bold rounded-lg shadow hover:bg-blue-600 transition-colors"
-              >
-                Arrived / Complete
-              </button>
             </div>
           ) : (
             <div className="flex flex-col gap-2 w-full">
@@ -282,20 +322,37 @@ export const WinchLiveUser: React.FC<WinchLiveUserProps> = ({ bookingId, onBack 
                     🚗
                   </div>
                   <div>
-                    <h3 className="font-bold text-slate-900 dark:text-white">
-                      {location.eta ? `Arriving in ~${location.eta}` : 'Winch is on the way'}
+                    <h3 className="font-bold text-slate-900 dark:text-white text-sm">
+                      {location.status === 'In Progress' ? `Heading to ${destAddress}` : 
+                       location.eta ? `Arriving in ~${location.eta}` : 'Winch is on the way'}
                     </h3>
                     <p className="text-xs text-gray-500">
-                      {location.distance ? `${location.distance} away` : 'Driver is heading to you.'}
+                      {location.status === 'In Progress' ? 'Towing vehicle to destination' :
+                       location.distance ? `${location.distance} away` : 'Driver is heading to you.'}
                     </p>
                   </div>
                 </div>
                 
-                <a href="tel:+201000000000" className="px-4 py-2 bg-green-500 text-white font-bold rounded-lg shadow hover:bg-green-600 transition-colors">
-                  Call Driver
-                </a>
+                {location.status !== 'In Progress' && (
+                  <a href="tel:+201000000000" className="px-4 py-2 bg-green-500 text-white font-bold rounded-lg shadow hover:bg-green-600 transition-colors whitespace-nowrap text-sm">
+                    Call Driver
+                  </a>
+                )}
               </div>
-              {isActive && location.status !== 'In Progress' && (
+
+              {location.status === 'In Progress' && (
+                <div className="grid grid-cols-2 gap-4 text-center mt-2">
+                  <div className="bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-lg border border-gray-100 dark:border-gray-800">
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-medium uppercase tracking-wider">Remaining Time (ETA)</span>
+                    <span className="text-base font-bold text-slate-800 dark:text-white">{location.eta || 'Calculating...'}</span>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 p-2.5 rounded-lg border border-gray-100 dark:border-gray-800">
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400 block font-medium uppercase tracking-wider">Remaining Distance</span>
+                    <span className="text-base font-bold text-slate-800 dark:text-white">{location.distance || 'Calculating...'}</span>
+                  </div>
+                </div>
+              )}
+              {isActive && location.status !== 'In Progress' && location.status !== 'Payment_Pending' && (
                 <button
                   onClick={handleCancelTrip}
                   className="w-full mt-2 py-2 bg-red-500 hover:bg-red-600 text-white font-bold rounded-lg transition-colors text-sm"
@@ -307,6 +364,62 @@ export const WinchLiveUser: React.FC<WinchLiveUserProps> = ({ bookingId, onBack 
           )}
         </div>
       </div>
+
+      {/* Price Approval Overlay Modal */}
+      {location.status === 'Pending_Approval' && !isDriver && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl p-6 shadow-2xl text-center">
+            <h3 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Price Adjustment</h3>
+            <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+              The driver has proposed a new price for this trip based on the current conditions.
+            </p>
+            <div className="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 mb-6">
+               <div className="font-bold text-3xl text-cyber-primary">{location.price} EGP</div>
+               <div className="text-xs text-slate-500 mt-1">Proposed Price</div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  if (socketRef.current) {
+                    socketRef.current.emit('cancel_booking', { bookingId });
+                  }
+                }}
+                className="flex-1 py-3 bg-red-100 hover:bg-red-200 text-red-600 font-bold rounded-xl transition-all"
+              >
+                Decline
+              </button>
+              <button
+                onClick={() => {
+                  if (socketRef.current) {
+                    socketRef.current.emit('approve_booking_price', { bookingId });
+                  }
+                }}
+                className="flex-1 py-3 bg-cyber-primary hover:bg-blue-600 text-white font-bold rounded-lg shadow hover:bg-blue-600 transition-colors"
+              >
+                Accept
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Driver Waiting for Approval Modal */}
+      {location.status === 'Pending_Approval' && isDriver && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[999] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl p-6 shadow-2xl text-center">
+            <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Waiting for Approval</h3>
+            <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+              Waiting for the customer to approve the adjusted price of {location.price} EGP.
+            </p>
+            <button
+                onClick={onBack}
+                className="w-full py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-white font-bold rounded-xl transition-all"
+              >
+                Back to Dashboard
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Payment Overlay Modal */}
       {showPaymentModal && (
@@ -342,9 +455,9 @@ export const WinchLiveUser: React.FC<WinchLiveUserProps> = ({ bookingId, onBack 
                 <span className="text-lg">💵</span>
               </label>
 
-              <label className={`flex items-center justify-between p-4 rounded-xl border-2 cursor-pointer transition-all ${paymentMethod === 'WALLET' ? 'border-cyber-primary bg-cyber-primary/5' : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'} ${user && user.walletBalance < (location.price || 0) ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              <label className={`flex items-center justify-between p-4 rounded-xl border-2 cursor-pointer transition-all ${paymentMethod === 'WALLET' ? 'border-cyber-primary bg-cyber-primary/5' : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'} ${!user || user.walletBalance <= 0 || user.walletBalance < (location.price || 0) ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 <div className="flex items-center gap-3">
-                  <input type="radio" name="payment_method" value="WALLET" checked={paymentMethod === 'WALLET'} disabled={!user || user.walletBalance < (location.price || 0)} onChange={() => setPaymentMethod('WALLET')} className="text-cyber-primary focus:ring-cyber-primary" />
+                  <input type="radio" name="payment_method" value="WALLET" checked={paymentMethod === 'WALLET'} disabled={!user || user.walletBalance <= 0 || user.walletBalance < (location.price || 0)} onChange={() => setPaymentMethod('WALLET')} className="text-cyber-primary focus:ring-cyber-primary" />
                   <div>
                     <p className="font-bold text-slate-900 dark:text-white">Digital Wallet</p>
                     <p className="text-xs text-slate-500">Balance: {user?.walletBalance || 0} EGP</p>

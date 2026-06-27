@@ -129,6 +129,122 @@ router.post('/calculate-trip-price', authenticateToken, async (req, res) => {
   }
 });
 
+// ─── POST /api/wallet/settle-commission — Settle commission debt using wallet balance ───
+router.post('/settle-commission', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const user = await prisma.user.findUnique({
+      where: { id: userId }
+    });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (user.role !== 'WINCH_DRIVER') {
+      return res.status(400).json({ error: 'Only winch drivers can settle commission debts' });
+    }
+    const debt = user.commissionOwed;
+    if (debt <= 0) {
+      return res.status(400).json({ error: 'No commission debt to settle' });
+    }
+    const balance = user.walletBalance;
+    if (balance <= 0) {
+      return res.status(400).json({ error: 'Insufficient wallet balance to settle commission debt' });
+    }
+    const amountToSettle = Math.min(debt, balance);
+    
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          walletBalance: { decrement: amountToSettle },
+          commissionOwed: { decrement: amountToSettle }
+        }
+      });
+      await tx.transaction.create({
+        data: {
+          userId,
+          amount: amountToSettle,
+          commission: amountToSettle,
+          type: 'Commission Settlement',
+          status: 'Completed'
+        }
+      });
+    });
+
+    const updatedUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { walletBalance: true, commissionOwed: true }
+    });
+
+    return res.json({
+      success: true,
+      newBalance: updatedUser?.walletBalance,
+      commissionOwed: updatedUser?.commissionOwed,
+      settledAmount: amountToSettle,
+      message: `Successfully settled ${amountToSettle.toFixed(2)} EGP of platform commission debt.`
+    });
+  } catch (error) {
+    console.error('Commission settlement error:', error);
+    return res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// ─── POST /api/wallet/withdraw — Withdraw funds from wallet ─────────────
+router.post('/withdraw', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const { amount } = req.body;
+    const userId = req.user!.id;
+
+    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+      return res.status(400).json({ error: 'A valid positive amount is required' });
+    }
+
+    const parsedAmount = Number(amount);
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { walletBalance: true }
+    });
+
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    if (user.walletBalance < parsedAmount) {
+      return res.status(400).json({ error: 'Insufficient wallet balance' });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          walletBalance: { decrement: parsedAmount }
+        }
+      });
+
+      await tx.transaction.create({
+        data: {
+          userId,
+          amount: parsedAmount,
+          commission: 0,
+          type: 'Withdrawal',
+          status: 'Completed'
+        }
+      });
+    });
+
+    const updated = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { walletBalance: true }
+    });
+
+    res.json({
+      success: true,
+      newBalance: updated?.walletBalance,
+      message: `Withdrawal request for ${parsedAmount.toFixed(2)} EGP sent to your bank.`
+    });
+  } catch (error) {
+    console.error('Wallet withdrawal error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // ─── Haversine formula ────────────────────────────────────────────────────────
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;

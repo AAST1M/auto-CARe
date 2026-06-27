@@ -281,11 +281,13 @@ export const SpareParts: React.FC<SparePartsProps> = ({ onBack }) => {
               ) : (
                 <button 
                   onClick={handleOrder}
-                  disabled={ordering}
-                  className="w-full py-4 rounded-xl font-bold bg-cyber-primary text-white shadow-[0_0_20px_rgba(59,130,246,0.4)] flex justify-center items-center gap-2 hover:bg-blue-600 transition-colors disabled:opacity-70"
+                  disabled={ordering || !user || user.walletBalance < (selectedPart.price * orderQuantity)}
+                  className="w-full py-4 rounded-xl font-bold bg-cyber-primary text-white shadow-[0_0_20px_rgba(59,130,246,0.4)] flex justify-center items-center gap-2 hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {ordering ? (
                     <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : !user || user.walletBalance < (selectedPart.price * orderQuantity) ? (
+                    <><AlertCircle size={20} /> Insufficient Balance</>
                   ) : (
                     <><ShoppingCart size={20} /> Buy Now</>
                   )}

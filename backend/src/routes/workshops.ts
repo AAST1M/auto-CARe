@@ -48,12 +48,12 @@ router.get('/', async (req, res) => {
           name: 'Al-Ahlia Mechanics',
           rating: 4.8,
           distance: '1.2 km',
-          specialty: 'European Cars',
+          specialty: 'German Cars, European Cars',
           priceEstimate: '$$',
           image: 'https://images.unsplash.com/photo-1613214149922-f1809c99b414?w=500',
           address: 'Tahrir Square',
           hours: '9 AM - 9 PM',
-          services: 'Mechanical, Electrical',
+          services: 'Mechanical, Electrical, Oil Change, Brake Pads, Suspension, Engine work',
           description: 'Expert mechanics ready to bid on your car repairs!',
         },
         include: { owner: { select: { name: true, taxCard: true } } }
@@ -257,9 +257,10 @@ router.patch('/appointments/:id', authenticateToken, async (req: AuthRequest, re
 
     const updated = await prisma.appointment.update({ where: { id }, data: { status } });
 
-    // Notify workshop owner room
+    // Notify workshop owner and user rooms
     if (_io) {
       _io.to(`workshop_${appointment.workshopId}`).emit('appointment_updated', updated);
+      _io.to(`user_${appointment.userId}`).emit('appointment_updated', updated);
     }
 
     res.json(updated);
@@ -286,10 +287,20 @@ router.patch('/appointments/:id/progress', authenticateToken, requireRole('WORKS
     });
     if (!workshop) return res.status(403).json({ error: 'Unauthorized' });
 
+    let newStatus = appointment.status;
+    if (Number(progress) >= 25) newStatus = 'Repairing';
+    if (Number(progress) >= 75) newStatus = 'Quality Check';
+    if (Number(progress) >= 100) newStatus = 'Ready';
+
     const updated = await prisma.appointment.update({
       where: { id },
-      data: { progress: Number(progress) }
+      data: { progress: Number(progress), status: newStatus }
     });
+
+    if (_io) {
+      _io.to(`user_${appointment.userId}`).emit('appointment_updated', updated);
+    }
+
     res.json(updated);
   } catch (error) {
     res.status(500).json({ error: 'Server error' });

@@ -295,7 +295,10 @@ router.get('/location/:id', authenticateToken, async (req: any, res) => {
       driverLat: booking.driverLat,
       driverLng: booking.driverLng,
       destLat: booking.destLat,
-      destLng: booking.destLng
+      destLng: booking.destLng,
+      price: booking.price,
+      driverName: booking.driverName,
+      vehicle: booking.vehicle
     });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });

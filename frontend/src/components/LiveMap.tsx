@@ -104,6 +104,7 @@ interface LiveMapProps {
   zoom?: number;
   onZoomChange?: (zoom: number) => void;
   onMapLoadExternal?: (map: google.maps.Map) => void;
+  onRouteUpdate?: (info: { distance: string; eta: string }) => void;
 }
 
 export const LiveMap: React.FC<LiveMapProps> = ({
@@ -118,6 +119,7 @@ export const LiveMap: React.FC<LiveMapProps> = ({
   zoom = 14,
   onZoomChange,
   onMapLoadExternal,
+  onRouteUpdate,
 }) => {
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_KEY,
@@ -226,6 +228,36 @@ export const LiveMap: React.FC<LiveMapProps> = ({
       }
     }
   }, [isLoaded, userLat, userLng, driverLat, driverLng, destLat, destLng, tripStatus]);
+
+  // Invoke callback when route results or status change
+  const [lastEmitted, setLastEmitted] = useState({ distance: '', eta: '' });
+  
+  useEffect(() => {
+    if (!onRouteUpdate) return;
+    let activeLeg = null;
+
+    if (tripStatus === 'Active' || tripStatus === 'Driver En Route') {
+      activeLeg = directionsToA?.routes[0]?.legs[0];
+    } else if (tripStatus === 'In Progress' || tripStatus === 'Towing') {
+      activeLeg = directionsAToB?.routes[0]?.legs[0];
+    } else if (!tripStatus || tripStatus === 'Reviewing' || tripStatus === 'Pending_Approval') {
+      activeLeg = directionsAToB?.routes[0]?.legs[0];
+    }
+
+    if (!activeLeg && !tripStatus) {
+      activeLeg = directionsAToB?.routes[0]?.legs[0];
+    }
+
+    if (activeLeg) {
+      const dist = activeLeg.distance?.text || '';
+      const eta = activeLeg.duration?.text || '';
+      
+      if (dist !== lastEmitted.distance || eta !== lastEmitted.eta) {
+        setLastEmitted({ distance: dist, eta });
+        onRouteUpdate({ distance: dist, eta });
+      }
+    }
+  }, [directionsToA, directionsAToB, tripStatus]);
 
   // Auto-fit bounds when coordinates change
   useEffect(() => {

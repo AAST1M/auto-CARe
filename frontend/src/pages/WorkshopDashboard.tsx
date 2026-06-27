@@ -13,8 +13,10 @@ const GMAP_LIBRARIES: ('places' | 'geometry')[] = ['places', 'geometry'];
 export const WorkshopDashboard = () => {
   const navigate = useNavigate();
   const { user, refreshUser } = useAuth();
-  const { carsInWorkshop, setCarsInWorkshop } = useAppContext();
   const [showWorkshopWallet, setShowWorkshopWallet] = React.useState(false);
+  const [showWithdrawModal, setShowWithdrawModal] = React.useState(false);
+  const [withdrawAmount, setWithdrawAmount] = React.useState('');
+  const [withdrawLoading, setWithdrawLoading] = React.useState(false);
   const [showWorkshopProfile, setShowWorkshopProfile] = useState(false);
   const [myWorkshop, setMyWorkshop] = useState<any>(null);
   const [appointments, setAppointments] = useState<any[]>([]);
@@ -119,6 +121,7 @@ export const WorkshopDashboard = () => {
     if (action === 'Check-In') newStatus = 'Checked-In';
     else if (action === 'Accept') newStatus = 'Confirmed';
     else if (action === 'Decline') newStatus = 'Cancelled';
+    else if (action === 'Complete') newStatus = 'Completed';
     else if (action === 'Reschedule') {
       alert(`Rescheduling request sent.`);
       return;
@@ -138,15 +141,6 @@ export const WorkshopDashboard = () => {
 
       if (action === 'Check-In') {
         const appt = appointments.find(a => a.id === id);
-        if (appt) {
-          setCarsInWorkshop(prev => [...prev, {
-            id: Date.now().toString(),
-            model: appt.carDetails || 'Unknown Car',
-            plate: 'NEW 123',
-            status: 'Diagnostics',
-            progress: 0
-          }]);
-        }
         refreshUser();
       }
 
@@ -157,26 +151,59 @@ export const WorkshopDashboard = () => {
     }
   };
 
-  const updateCarStatus = (id: string) => {
-    setCarsInWorkshop(prev => prev.map(car => {
-      if (car.id === id) {
-        const newProgress = Math.min(100, car.progress + 25);
-        let status = car.status;
-        if (newProgress >= 25) status = 'Repairing';
-        if (newProgress >= 75) status = 'Quality Check';
-        if (newProgress >= 100) status = 'Ready';
-        return { ...car, progress: newProgress, status };
+  const updateCarStatus = async (id: string, currentProgress: number) => {
+    try {
+      const newProgress = Math.min(100, currentProgress + 25);
+      const res = await fetch(`${API_URL}/api/workshops/appointments/${id}/progress`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ progress: newProgress })
+      });
+      if (res.ok) {
+        await fetchAppointments();
+      } else {
+        throw new Error('Failed to update progress');
       }
-      return car;
-    }));
-  };
-
-  const handleWorkshopWithdraw = async () => {
-    if (safeUser.walletBalance > 0) {
-      alert(`Withdrawal request for ${safeUser.walletBalance} EGP sent to bank.`);
-      await refreshUser();
+    } catch (err) {
+      alert('Could not update status. Please try again.');
     }
   };
+
+  const handleWorkshopWithdraw = async (amount: number) => {
+    if (!amount || amount <= 0 || amount > safeUser.walletBalance) {
+      alert('Invalid withdrawal amount. Make sure it is greater than 0 and does not exceed your balance.');
+      return;
+    }
+    setWithdrawLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_URL}/api/wallet/withdraw`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ amount })
+      });
+      const data = await res.json();
+      
+      if (!res.ok) throw new Error(data.error || 'Withdrawal failed');
+      
+      alert(data.message || `Withdrawal request for ${amount} EGP submitted.`);
+      setShowWithdrawModal(false);
+      setWithdrawAmount('');
+      refreshUser();
+    } catch (err: any) {
+      alert(err.message || 'Error processing withdrawal');
+    } finally {
+      setWithdrawLoading(false);
+    }
+  };
+
+  const activeCars = appointments.filter(a => ['Checked-In', 'Repairing', 'Quality Check', 'Ready'].includes(a.status));
 
   return (
       <div className="flex flex-col h-screen bg-slate-100 dark:bg-cyber-900">
@@ -242,7 +269,7 @@ export const WorkshopDashboard = () => {
                        <p className="text-sm opacity-80">Total Revenue</p>
                        <p className="text-4xl font-bold">{safeUser.walletBalance.toLocaleString()} EGP</p>
                    </div>
-                   <button onClick={handleWorkshopWithdraw} className="mt-auto w-full py-4 bg-cyber-primary text-white rounded-xl font-bold shadow-lg">Withdraw Funds</button>
+                   <button onClick={() => setShowWithdrawModal(true)} className="mt-auto w-full py-4 bg-cyber-primary text-white rounded-xl font-bold shadow-lg">Withdraw Funds</button>
                </div>
           ) : (
           <>
@@ -263,8 +290,8 @@ export const WorkshopDashboard = () => {
                        <p className="text-2xl font-bold">{appointments.filter(a => a.status !== 'Cancelled').length}</p>
                    </div>
                    <div className="bg-white/10 p-4 rounded-xl backdrop-blur-sm">
-                       <p className="text-xs text-gray-300">Cars in Shop</p>
-                       <p className="text-2xl font-bold">{carsInWorkshop.length}</p>
+                       <h3 className="text-gray-500 dark:text-gray-400 font-medium mb-1">Cars in Shop</h3>
+                       <p className="text-2xl font-bold">{activeCars.length}</p>
                    </div>
                </div>
            </div>
@@ -275,34 +302,37 @@ export const WorkshopDashboard = () => {
                <div>
                    <h3 className="font-bold text-slate-900 dark:text-white mb-3 flex items-center gap-2"><Activity size={18} className="text-cyber-primary"/> Live Car Tracker</h3>
                    <div className="space-y-3">
-                       {carsInWorkshop.map(car => (
-                           <div key={car.id} className="glass-panel p-4 rounded-xl">
-                               <div className="flex justify-between items-center mb-2">
-                                   <span className="font-bold text-sm text-slate-900 dark:text-white">{car.model}</span>
-                                   <span className="text-xs text-gray-500">{car.plate}</span>
-                               </div>
-                               <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-2">
-                                {/* eslint-disable-next-line react/forbid-dom-props */}
-                                   <div className={`bg-cyber-primary h-2 rounded-full transition-all duration-500 ${
-                                     car.progress >= 100 ? 'w-full' :
-                                     car.progress >= 90 ? 'w-[90%]' :
-                                     car.progress >= 80 ? 'w-[80%]' :
-                                     car.progress >= 70 ? 'w-[70%]' :
-                                     car.progress >= 60 ? 'w-[60%]' :
-                                     car.progress >= 50 ? 'w-[50%]' :
-                                     car.progress >= 40 ? 'w-[40%]' :
-                                     car.progress >= 30 ? 'w-[30%]' :
-                                     car.progress >= 20 ? 'w-[20%]' :
-                                     car.progress >= 10 ? 'w-[10%]' : 'w-0'
-                                   }`}></div>
-                               </div>
-                               <div className="flex justify-between items-center">
-                                   <span className="text-xs font-bold text-cyber-primary">{car.status}</span>
-                                   <button onClick={() => updateCarStatus(car.id)} className="text-xs bg-slate-200 dark:bg-gray-700 px-2 py-1 rounded hover:bg-cyber-primary hover:text-white transition">Update Status</button>
-                               </div>
+                       {activeCars.map(car => (
+                         <div key={car.id} className="glass-panel p-4 rounded-xl">
+                           <div className="flex justify-between items-center mb-2">
+                             <span className="font-bold text-slate-900 dark:text-white">{car.carDetails || 'Unknown Car'}</span>
+                             <span className="text-xs text-gray-500">{car.user?.name || 'Unknown User'}</span>
                            </div>
+                           <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-2">
+                             <div className="bg-cyber-primary h-2 rounded-full transition-all duration-500" style={{ width: `${car.progress || 0}%` }} />
+                           </div>
+                           <div className="flex justify-between items-center">
+                             <span className="text-xs font-bold text-cyber-primary">{car.status}</span>
+                             {car.status !== 'Completed' && (
+                               <button 
+                                 onClick={() => {
+                                   if (car.progress >= 100 || car.status === 'Ready') {
+                                     handleWorkshopAction(car.id, 'Complete');
+                                   } else {
+                                     updateCarStatus(car.id, car.progress || 0);
+                                   }
+                                 }} 
+                                 className="text-xs bg-slate-200 dark:bg-gray-700 px-3 py-1.5 rounded-lg hover:bg-cyber-primary hover:text-white transition font-bold"
+                               >
+                                 {car.progress < 25 ? 'Start Repair' : 
+                                  car.progress < 75 ? 'Start Quality Check' : 
+                                  car.progress < 100 ? 'Mark Ready' : 'Mark Claimed (Done)'}
+                               </button>
+                             )}
+                           </div>
+                         </div>
                        ))}
-                       {carsInWorkshop.length === 0 && <p className="text-gray-500 text-sm">No cars currently being serviced.</p>}
+                       {activeCars.length === 0 && <p className="text-gray-500 text-sm">No cars currently being serviced.</p>}
                    </div>
                </div>
 
@@ -353,6 +383,51 @@ export const WorkshopDashboard = () => {
            </div>
            </>
           )}
+
+      {showWithdrawModal && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-white dark:bg-cyber-900 rounded-t-3xl p-6 pb-10 shadow-2xl animate-in slide-in-from-bottom duration-300">
+            <div className="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-6" />
+            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Withdraw Funds</h2>
+               <p className="text-sm text-gray-500 mb-6">Enter the amount you would like to withdraw to your bank account.</p>
+               
+               <div className="bg-slate-50 dark:bg-gray-700 p-4 rounded-xl flex justify-between items-center mb-6">
+                 <div>
+                   <p className="text-sm text-gray-500 dark:text-gray-400">Available Balance</p>
+                   <p className="font-bold text-lg text-slate-900 dark:text-white">{safeUser.walletBalance.toFixed(2)} EGP</p>
+                 </div>
+               </div>
+
+               <div className="mb-6">
+                 <label className="block text-sm font-medium text-slate-700 dark:text-gray-300 mb-2">Amount (EGP)</label>
+                 <input 
+                   type="number" 
+                   value={withdrawAmount}
+                   onChange={(e) => setWithdrawAmount(e.target.value)}
+                   className="w-full p-3 bg-white dark:bg-gray-700 border border-slate-200 dark:border-gray-600 rounded-xl outline-none focus:border-cyber-primary"
+                   placeholder="Enter amount"
+                   min="1"
+                   max={safeUser.walletBalance}
+                 />
+               </div>
+
+               <button 
+                 onClick={() => handleWorkshopWithdraw(Number(withdrawAmount))}
+                 disabled={withdrawLoading || safeUser.walletBalance <= 0 || !withdrawAmount}
+                 className="w-full bg-cyber-primary text-white py-3 rounded-xl font-bold shadow-lg shadow-cyber-primary/30 hover:shadow-cyber-primary/50 transition-all disabled:opacity-50 flex justify-center items-center"
+               >
+                 {withdrawLoading ? <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></span> : 'Confirm Withdrawal'}
+               </button>
+
+            <button
+              onClick={() => { setShowWithdrawModal(false); setWithdrawAmount(''); }}
+              className="w-full mt-3 py-3 text-gray-500 font-medium rounded-xl hover:bg-gray-50 dark:hover:bg-slate-800 transition text-sm"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       </div>
   );
 };

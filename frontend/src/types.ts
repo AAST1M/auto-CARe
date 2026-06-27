@@ -97,8 +97,10 @@ export interface WorkshopAppointment {
     carDetails: string;
     serviceType: string;
     time: string;
-    status: 'Pending' | 'Confirmed' | 'Checked-In' | 'Completed' | 'Cancelled';
+    status: 'Pending' | 'Confirmed' | 'Checked-In' | 'Completed' | 'Cancelled' | 'Repairing' | 'Quality Check' | 'Ready' | string;
     price: number;
+    workshop?: any;
+    progress?: number;
 }
 
 export interface UserProfile {
@@ -110,6 +112,7 @@ export interface UserProfile {
   dob: string;
   role: UserRole | null;
   walletBalance: number; // For Drivers/Owners
+  commissionOwed?: number; // For Drivers
   approvalStatus?: string;
   
   // User/Customer Specific
