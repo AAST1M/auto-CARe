@@ -1,0 +1,1 @@
+Trigger CI run: ensure Jest uses CommonJS config (jest.config.cjs) so ts-node is not required.
