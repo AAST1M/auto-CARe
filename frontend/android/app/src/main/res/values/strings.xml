@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">auto-CARe</string>
+    <string name="title_activity_main">auto-CARe</string>
+    <string name="package_name">com.autocare.app</string>
+    <string name="custom_url_scheme">com.autocare.app</string>
+</resources>
