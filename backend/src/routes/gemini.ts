@@ -27,8 +27,8 @@ router.post('/diagnose', authenticateToken, async (req, res) => {
         },
         action: {
           type: "STRING",
-          description: "The required next step based on vehicle mobility. Must be 'WINCH' or 'ASK_MOBILITY' if unknown.",
-          enum: ["WINCH", "ASK_MOBILITY"]
+          description: "The required next step based on vehicle mobility. Must be 'WINCH', 'WORKSHOP', or 'ASK_MOBILITY' if unknown.",
+          enum: ["WINCH", "WORKSHOP", "ASK_MOBILITY"]
         }
       },
       required: ["reply", "action"]
@@ -43,9 +43,10 @@ CRITICAL RULES:
 1. You MUST ALWAYS output valid JSON matching the provided schema.
 2. If the user does not specify if the car is moving, set action to "ASK_MOBILITY" and ask them "Is your car currently moving or not?" at the end of your reply.
 3. If the user's car is NOT moving, broken down, or requires towing, set action to "WINCH".
-4. You MUST ALWAYS write your 'reply' (including the question about mobility) in the ${targetLanguage} language ONLY. Do not use any other languages in your reply.
-5. CAREFULLY LISTEN to any audio provided: if it contains car/motor/system sounds, analyze the noise (e.g. clicking, grinding, squealing) to diagnose the problem. If it contains voice, listen to the user's spoken symptoms.
-6. CAREFULLY LOOK at any photos provided: analyze dashboards for warning lights, or engine bays/parts for leaks, wear, or damage.
+4. If the user's car IS moving or can be safely driven, set action to "WORKSHOP".
+5. You MUST ALWAYS write your 'reply' (including the question about mobility) in the ${targetLanguage} language ONLY. Do not use any other languages in your reply.
+6. CAREFULLY LISTEN to any audio provided: if it contains car/motor/system sounds, analyze the noise (e.g. clicking, grinding, squealing) to diagnose the problem. If it contains voice, listen to the user's spoken symptoms.
+7. CAREFULLY LOOK at any photos provided: analyze dashboards for warning lights, or engine bays/parts for leaks, wear, or damage.
 
 The user is reporting: "${symptom}". Analyze the input (and any attached media) and respond professionally.`;
 

@@ -90,6 +90,13 @@ router.patch('/users/:id/approve', authenticateToken, requireRole('ADMIN'), asyn
       data: { approvalStatus: 'APPROVED' },
       select: { id: true, email: true, name: true, role: true, approvalStatus: true }
     });
+    
+    // Clear workshops cache so newly approved workshops show up
+    if (updated.role === 'WORKSHOP_OWNER') {
+      const { clearCache } = require('../lib/redis');
+      await clearCache('workshops:all').catch(console.error);
+    }
+    
     res.json(updated);
   } catch (error) {
     console.error(error);
@@ -106,6 +113,13 @@ router.patch('/users/:id/reject', authenticateToken, requireRole('ADMIN'), async
       data: { approvalStatus: 'REJECTED' },
       select: { id: true, email: true, name: true, role: true, approvalStatus: true }
     });
+    
+    // Clear workshops cache so rejected workshops are hidden
+    if (updated.role === 'WORKSHOP_OWNER') {
+      const { clearCache } = require('../lib/redis');
+      await clearCache('workshops:all').catch(console.error);
+    }
+
     res.json(updated);
   } catch (error) {
     console.error(error);

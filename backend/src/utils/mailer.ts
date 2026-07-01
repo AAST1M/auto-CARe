@@ -5,19 +5,37 @@ let transporter: nodemailer.Transporter | null = null;
 
 const initMailer = async () => {
   if (!transporter) {
-    // Generate test SMTP service account from ethereal.email
-    const testAccount = await nodemailer.createTestAccount();
+    const smtpHost = process.env.SMTP_HOST;
+    const smtpPort = process.env.SMTP_PORT;
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS;
 
-    transporter = nodemailer.createTransport({
-      host: 'smtp.ethereal.email',
-      port: 587,
-      secure: false, // true for 465, false for other ports
-      auth: {
-        user: testAccount.user, // generated ethereal user
-        pass: testAccount.pass, // generated ethereal password
-      },
-    });
-    console.log('✉️  Ethereal Test Mailer Initialized');
+    if (smtpHost && smtpPort && smtpUser && smtpPass) {
+      transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: Number(smtpPort),
+        secure: smtpPort === '465', // true for 465, false for other ports
+        auth: {
+          user: smtpUser,
+          pass: smtpPass,
+        },
+      });
+      console.log('✉️  Real SMTP Mailer Initialized');
+    } else {
+      // Generate test SMTP service account from ethereal.email
+      const testAccount = await nodemailer.createTestAccount();
+
+      transporter = nodemailer.createTransport({
+        host: 'smtp.ethereal.email',
+        port: 587,
+        secure: false, // true for 465, false for other ports
+        auth: {
+          user: testAccount.user, // generated ethereal user
+          pass: testAccount.pass, // generated ethereal password
+        },
+      });
+      console.log('✉️  Ethereal Test Mailer Initialized (SMTP env variables missing)');
+    }
   }
   return transporter;
 };

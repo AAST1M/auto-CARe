@@ -802,6 +802,7 @@ const App: React.FC = () => {
 
   // Wallet Top-Up Modal State
   const [showTopUpModal, setShowTopUpModal] = useState(false);
+  const [selectedBookingForDetails, setSelectedBookingForDetails] = useState<UserBooking | null>(null);
   const [topUpStep, setTopUpStep] = useState(1);
   const [topUpAmount, setTopUpAmount] = useState('');
   const [topUpLoading, setTopUpLoading] = useState(false);
@@ -935,11 +936,38 @@ const App: React.FC = () => {
           const mappedBookings = data.map((appt: any) => ({
             id: appt.id,
             serviceName: appt.workshop?.name || 'Workshop',
-            date: appt.time,
+            date: appt.time ? `${appt.date} at ${appt.time}` : appt.date,
             status: appt.status || 'Pending',
-            price: `${appt.price}.00 EGP`
+            price: `${appt.price}.00 EGP`,
+            address: appt.workshop?.address,
+            lat: appt.workshop?.lat,
+            lng: appt.workshop?.lng,
+            progress: appt.progress || 0,
+            createdAt: appt.createdAt || new Date().toISOString()
           }));
-          setUser(prev => ({ ...prev, bookings: mappedBookings }));
+          
+          let finalBookings = mappedBookings;
+          try {
+            const winchRes = await fetch(`${API_URL}/api/winch/bookings/me`, {
+              headers: { 'Authorization': `Bearer ${tokenVal}` }
+            });
+            if (winchRes.ok) {
+              const winchData = await winchRes.json();
+              const mappedWinch = winchData.map((wb: any) => ({
+                id: wb.id,
+                serviceName: 'Emergency Winch',
+                date: new Date(wb.createdAt).toLocaleDateString(),
+                status: wb.status,
+                price: `${wb.price} EGP`,
+                createdAt: wb.createdAt
+              }));
+              finalBookings = [...mappedBookings, ...mappedWinch].sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            }
+          } catch(e) {
+            console.error('Failed to fetch winch bookings for profile', e);
+          }
+          
+          setUser(prev => ({ ...prev, bookings: finalBookings }));
         }
       }
     } catch (error) {
@@ -956,7 +984,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (selectedWorkshop) {
-      const isE2E = window.location.href.includes('localhost') || window.location.href.includes('127.0.0.1') || navigator.userAgent.includes('Headless');
+      const isE2E = navigator.userAgent.includes('Headless');
       const d = isE2E ? new Date('2026-10-12T00:00:00') : new Date();
       d.setDate(d.getDate() + selectedDateIndex);
       const dateStr = d.toISOString().split('T')[0];
@@ -991,23 +1019,29 @@ const App: React.FC = () => {
 
     const fetchIPLocation = async () => {
       try {
-        // Free IP geolocation — no API key needed
-        const res = await fetch('https://ip-api.com/json/?fields=lat,lon,city,regionName,country,status');
-        const data = await res.json();
-        if (data.status === 'success') {
-          setCoords({ lat: data.lat, lng: data.lon });
-          const name = await reverseGeocode(data.lat, data.lon);
-          setLocationName(name || `${data.city}, ${data.regionName}`);
-          return;
+        // Call our own backend proxy — avoids CORS issues in the browser
+        const res = await fetch(`${API_URL}/api/utils/geoip`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.lat && data?.lng) {
+            setCoords({ lat: data.lat, lng: data.lng });
+            const name = await reverseGeocode(data.lat, data.lng);
+            setLocationName(name || data.name || 'Location Found');
+            return;
+          }
         }
       } catch (e) {
-        console.error('IP geolocation failed', e);
+        console.warn('Backend GeoIP proxy failed:', e);
       }
-      // Ultimate fallback
+      // Final fallback: Cairo
       setCoords({ lat: 30.0444, lng: 31.2357 });
       setLocationName('Cairo, Egypt');
     };
 
+    // Start IP location immediately — works on HTTP/Docker, no permissions needed
+    fetchIPLocation();
+
+    // Also attempt GPS — will succeed on HTTPS/mobile and override with exact location
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         async (position) => {
@@ -1017,18 +1051,16 @@ const App: React.FC = () => {
           const name = await reverseGeocode(lat, lng);
           setLocationName(name || 'Location Found');
         },
-        async (error) => {
-          console.warn('GPS unavailable, trying IP location...', error.message);
-          await fetchIPLocation();
+        (error) => {
+          // GPS failed — IP location already handled above
+          console.warn('GPS not available:', error.message);
         },
         {
-          enableHighAccuracy: true,
-          timeout: 10000,
+          enableHighAccuracy: false,
+          timeout: 8000,
           maximumAge: 60000,
         }
       );
-    } else {
-      fetchIPLocation();
     }
   }, []);
 
@@ -1335,7 +1367,17 @@ const App: React.FC = () => {
 
   const goBack = () => {
     if (history.length > 1) {
-      window.history.back();
+      routerNavigate(-1);
+    } else {
+      const currentRole = authContext.user?.role || user.role;
+      let defaultView = View.HOME;
+      if (currentRole === 'WINCH_DRIVER') defaultView = View.WINCH_DASHBOARD;
+      if (currentRole === 'WORKSHOP_OWNER') defaultView = View.WORKSHOP_DASHBOARD;
+      if (currentRole === 'ADMIN') defaultView = View.ADMIN_DASHBOARD;
+      
+      if (view !== defaultView) {
+        navigate(defaultView);
+      }
     }
   };
 
@@ -1417,9 +1459,10 @@ const App: React.FC = () => {
 
         mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
         mediaRecorder.onstop = async () => {
-          const blob = new Blob(chunks, { type: 'audio/webm' });
+          const actualMimeType = mediaRecorder.mimeType || 'audio/webm';
+          const blob = new Blob(chunks, { type: actualMimeType });
           const base64 = await blobToBase64(blob);
-          handleSendMessage({ mimeType: 'audio/webm', data: base64 });
+          handleSendMessage({ mimeType: actualMimeType, data: base64 });
           stream.getTracks().forEach(track => track.stop());
         };
 
@@ -1675,14 +1718,33 @@ const App: React.FC = () => {
       pollDrivers(RADIUS_STEPS[searchRadiusStepRef.current]);
     });
 
-    socket.on('driver_countered', (data: { driverId: string; price: number }) => {
-      setActiveOffers(prev => prev.map(offer => {
-        if (offer.id === data.driverId || (offer as any).driverSocketId === data.driverId) {
-          return { ...offer, price: data.price };
+    socket.on('driver_countered', (data: { driverId: string; price: number; driverName?: string; vehicle?: string; eta?: string }) => {
+      cancelRadiusSearch(); // stop the progressive search loop
+      setActiveOffers(prev => {
+        const exists = prev.find(o => o.id === data.driverId || (o as any).driverSocketId === data.driverId);
+        if (exists) {
+          // Update price on existing offer
+          return prev.map(o =>
+            (o.id === data.driverId || (o as any).driverSocketId === data.driverId)
+              ? { ...o, price: data.price }
+              : o
+          );
         }
-        return offer;
-      }));
-      alert('Driver has countered your offer! Check the new price.');
+        // No existing offer — add as new offer from this driver
+        return [...prev, {
+          id: data.driverId,
+          driverName: data.driverName || 'Driver',
+          price: data.price,
+          eta: data.eta || '~10 min',
+          rating: 4.8,
+          vehicle: data.vehicle || 'Winch Truck',
+          status: 'pending' as const,
+          driverId: data.driverId,
+          driverSocketId: data.driverId,
+        }];
+      });
+      setWinchStatus('negotiating'); // switch user to the negotiating screen
+      alert('A driver has sent you a price offer! Review it below.');
     });
 
     // Kick off the progressive search
@@ -1704,28 +1766,14 @@ const App: React.FC = () => {
     const socket = winchSocketRef.current;
     const userId = user?.id || authContext.user?.id;
     if (!socket || !userId) return;
-    
-    alert(`Counter offer of ${offer.price} EGP sent to driver. Waiting...`);
-    
-    const carName = [user.carYear, user.carBrand, user.carModel].filter(Boolean).join(' ') || 'My Car';
-    
-    socket.emit('request_driver', {
-      customerId: userId,
-      customerName: user.name || authContext.user?.name || 'Customer',
+
+    socket.emit('customer_counter_offer', {
       driverSocketId: (offer as any).driverSocketId || offer.id,
-      car: carName,
-      issue: `Winch from ${pickupAddress || 'current location'} to ${dropoffAddress || 'destination'} (${tripDistance || 0} km)`,
+      customerId: userId,
       price: offer.price,
-      lat: pickupCoords?.lat || coords?.lat || 30.0444,
-      lng: pickupCoords?.lng || coords?.lng || 31.2357,
-      pickupLat: pickupCoords?.lat || coords?.lat || 30.0444,
-      pickupLng: pickupCoords?.lng || coords?.lng || 31.2357,
-      dropoffLat: dropoffCoords?.lat,
-      dropoffLng: dropoffCoords?.lng,
-      pickupAddress,
-      dropoffAddress,
-      tripDistance
     });
+
+    alert(`Counter offer of ${offer.price} EGP sent to driver. Waiting for their response...`);
   };
 
   const handleRejectOffer = (offerId: string) => {
@@ -1798,8 +1846,12 @@ const App: React.FC = () => {
 
   // Workshop Booking Logic
   const handleConfirmBooking = async () => {
+    if (!selectedTimeSlot) {
+      alert("Please select a time slot for your appointment.");
+      return;
+    }
     if (selectedWorkshop) {
-      const isE2E = window.location.href.includes('localhost') || window.location.href.includes('127.0.0.1') || navigator.userAgent.includes('Headless');
+      const isE2E = navigator.userAgent.includes('Headless');
       const d = isE2E ? new Date('2026-10-12T00:00:00') : new Date();
       d.setDate(d.getDate() + selectedDateIndex);
       const bookingDate = d.toISOString().split('T')[0];
@@ -2074,73 +2126,47 @@ const App: React.FC = () => {
       <div className="w-full max-w-md bg-white dark:bg-cyber-900 rounded-t-3xl p-6 pb-10 shadow-2xl animate-in slide-in-from-bottom duration-300">
         <div className="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-6" />
         <h3 className="text-xl font-bold font-display text-slate-900 dark:text-white mb-1">Add Funds</h3>
-        
-        {topUpStep === 1 ? (
-          <>
-            <p className="text-sm text-gray-500 mb-6">Enter your card details</p>
-            <div className="space-y-4 mb-6">
-              <input type="text" placeholder="Cardholder Name" value={cardDetails.name} onChange={e => setCardDetails({...cardDetails, name: e.target.value})} className="w-full p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-cyber-primary text-sm" />
-              <input type="text" placeholder="Card Number (e.g. 4111 1111 1111 1111)" value={cardDetails.number} onChange={e => setCardDetails({...cardDetails, number: e.target.value})} className="w-full p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-cyber-primary text-sm" />
-              <div className="flex gap-4">
-                <input type="text" placeholder="MM/YY" value={cardDetails.expiry} onChange={e => setCardDetails({...cardDetails, expiry: e.target.value})} className="flex-1 p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-cyber-primary text-sm" />
-                <input type="text" placeholder="CVC" value={cardDetails.cvc} onChange={e => setCardDetails({...cardDetails, cvc: e.target.value})} className="flex-1 p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-cyber-primary text-sm" />
-              </div>
-            </div>
-            <button
-              onClick={() => setTopUpStep(2)}
-              disabled={!cardDetails.name || !cardDetails.number || !cardDetails.expiry || !cardDetails.cvc}
-              className="w-full py-4 bg-gradient-to-r from-cyber-primary to-blue-600 text-white font-bold rounded-xl shadow-lg disabled:opacity-60 disabled:cursor-not-allowed transition"
-            >
-              Continue
-            </button>
-          </>
-        ) : (
-          <>
-            <p className="text-sm text-gray-500 mb-6">Choose a preset amount or enter a custom value</p>
-            {/* Quick select amounts */}
-            <div className="grid grid-cols-4 gap-2 mb-4">
-              {[50, 100, 200, 500].map(amt => (
-                <button
-                  key={amt}
-                  onClick={() => setTopUpAmount(String(amt))}
-                  className={`py-3 rounded-xl font-bold text-sm transition-all border ${topUpAmount === String(amt) ? 'bg-cyber-primary text-white border-cyber-primary' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-gray-700 text-slate-700 dark:text-white hover:border-cyber-primary'}`}
-                >
-                  {amt} EGP
-                </button>
-              ))}
-            </div>
+        <p className="text-sm text-gray-500 mb-6">Choose a preset amount or enter a custom value</p>
 
-            <div className="relative mb-4">
-              <input
-                type="number"
-                placeholder="Custom amount..."
-                value={topUpAmount}
-                onChange={e => setTopUpAmount(e.target.value)}
-                className="w-full p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-cyber-primary text-sm"
-                id="topup-amount-input"
-              />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-medium text-sm">EGP</span>
-            </div>
+        {/* Quick select amounts */}
+        <div className="grid grid-cols-4 gap-2 mb-4">
+          {[50, 100, 200, 500].map(amt => (
+            <button
+              key={amt}
+              onClick={() => setTopUpAmount(String(amt))}
+              className={`py-3 rounded-xl font-bold text-sm transition-all border ${topUpAmount === String(amt) ? 'bg-cyber-primary text-white border-cyber-primary' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-gray-700 text-slate-700 dark:text-white hover:border-cyber-primary'}`}
+            >
+              {amt} EGP
+            </button>
+          ))}
+        </div>
 
-            <button
-              onClick={() => topUpAmount && Number(topUpAmount) > 0 && handleTopUp(Number(topUpAmount))}
-              disabled={topUpLoading || !topUpAmount || Number(topUpAmount) <= 0}
-              className="w-full py-4 bg-gradient-to-r from-cyber-primary to-blue-600 text-white font-bold rounded-xl shadow-lg disabled:opacity-60 disabled:cursor-not-allowed transition"
-              id="confirm-topup-btn"
-            >
-              {topUpLoading ? 'Processing...' : `Add ${topUpAmount ? `${topUpAmount} EGP` : 'Funds'}`}
-            </button>
-            <button
-              onClick={() => setTopUpStep(1)}
-              className="w-full mt-3 py-3 text-gray-500 font-medium rounded-xl hover:bg-gray-50 dark:hover:bg-slate-800 transition text-sm"
-            >
-              Back
-            </button>
-          </>
-        )}
+        <div className="relative mb-4">
+          <input
+            type="number"
+            placeholder="Custom amount..."
+            value={topUpAmount}
+            onChange={e => setTopUpAmount(e.target.value)}
+            className="w-full p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-cyber-primary text-sm"
+            id="topup-amount-input"
+          />
+          <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-medium text-sm">EGP</span>
+        </div>
 
         <button
-          onClick={() => { setShowTopUpModal(false); setTopUpAmount(''); setTopUpStep(1); setCardDetails({ name: '', number: '', expiry: '', cvc: '' }); }}
+          onClick={() => {
+            const amt = Number(topUpAmount);
+            if (amt > 0) handleTopUp(amt);
+          }}
+          disabled={topUpLoading || !topUpAmount || Number(topUpAmount) <= 0}
+          className="w-full py-4 bg-gradient-to-r from-cyber-primary to-blue-600 text-white font-bold rounded-xl shadow-lg disabled:opacity-60 disabled:cursor-not-allowed transition"
+          id="confirm-topup-btn"
+        >
+          {topUpLoading ? 'Processing...' : `Add ${topUpAmount ? `${topUpAmount} EGP` : 'Funds'}`}
+        </button>
+
+        <button
+          onClick={() => { setShowTopUpModal(false); setTopUpAmount(''); }}
           className="w-full mt-3 py-3 text-gray-500 font-medium rounded-xl hover:bg-gray-50 dark:hover:bg-slate-800 transition text-sm"
         >
           Cancel
@@ -2148,6 +2174,51 @@ const App: React.FC = () => {
       </div>
     </div>
   );
+
+  const renderBookingDetailsModal = () => {
+    if (!selectedBookingForDetails) return null;
+    return (
+      <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 backdrop-blur-sm" id="booking-details-modal">
+        <div className="w-full max-w-md bg-white dark:bg-cyber-900 rounded-t-3xl p-6 pb-10 shadow-2xl animate-in slide-in-from-bottom duration-300">
+          <div className="w-12 h-1.5 bg-gray-300 rounded-full mx-auto mb-6" />
+          <h3 className="text-xl font-bold font-display text-slate-900 dark:text-white mb-4">Appointment Details</h3>
+          
+          <div className="space-y-4 mb-6">
+            <div className="flex justify-between items-center border-b border-gray-100 dark:border-gray-800 pb-3">
+              <span className="text-gray-500 text-sm">Service</span>
+              <span className="font-bold text-slate-900 dark:text-white">{selectedBookingForDetails.serviceName}</span>
+            </div>
+            <div className="flex justify-between items-center border-b border-gray-100 dark:border-gray-800 pb-3">
+              <span className="text-gray-500 text-sm">Date & Time</span>
+              <span className="font-medium text-slate-900 dark:text-white">{selectedBookingForDetails.date}</span>
+            </div>
+            <div className="flex justify-between items-center border-b border-gray-100 dark:border-gray-800 pb-3">
+              <span className="text-gray-500 text-sm">Status</span>
+              <span className="font-bold text-cyber-primary">{selectedBookingForDetails.status}</span>
+            </div>
+            <div className="flex justify-between items-center border-b border-gray-100 dark:border-gray-800 pb-3">
+              <span className="text-gray-500 text-sm">Price</span>
+              <span className="font-bold text-slate-900 dark:text-white">{selectedBookingForDetails.price}</span>
+            </div>
+            {selectedBookingForDetails.address && (
+              <div className="flex flex-col border-b border-gray-100 dark:border-gray-800 pb-3">
+                <span className="text-gray-500 text-sm mb-1">Location</span>
+                <span className="text-sm font-medium text-slate-900 dark:text-white leading-relaxed">{selectedBookingForDetails.address}</span>
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={() => setSelectedBookingForDetails(null)}
+            className="w-full py-4 bg-gray-100 dark:bg-gray-800 text-slate-900 dark:text-white font-bold rounded-xl hover:bg-gray-200 dark:hover:bg-gray-700 transition"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  };
+
 
   // --- Render Functions (Screens) ---
 
@@ -2954,7 +3025,27 @@ const App: React.FC = () => {
               </div>
               <span className="text-xs font-bold bg-green-500/20 text-green-500 px-3 py-1 rounded-full">{user.bookings[0].status}</span>
             </div>
-            <button onClick={() => navigate(View.PROFILE)} className="mt-4 w-full py-2 text-xs font-bold bg-slate-200 dark:bg-gray-700 text-slate-700 dark:text-gray-300 rounded-lg hover:bg-cyber-primary hover:text-white transition-colors">View Details</button>
+
+            {['Checked-In', 'Repairing', 'Quality Check'].includes(user.bookings[0].status) && (
+              <div className="mt-4 bg-slate-100 dark:bg-black/20 p-3 rounded-lg border border-gray-200 dark:border-gray-800">
+                <div className="flex justify-between text-[10px] text-gray-500 font-bold uppercase mb-2">
+                  <span>Live Progress</span>
+                  <span>{user.bookings[0].progress}%</span>
+                </div>
+                <div className="w-full bg-gray-200 dark:bg-gray-700 h-2.5 rounded-full overflow-hidden">
+                  <div className="bg-cyber-primary h-2.5 rounded-full transition-all duration-700 relative" style={{ width: `${user.bookings[0].progress}%` }}>
+                    <div className="absolute top-0 bottom-0 left-0 right-0 bg-white/20 animate-pulse"></div>
+                  </div>
+                </div>
+                <p className="text-xs text-cyber-primary font-bold mt-2 text-center">
+                  {user.bookings[0].status === 'Checked-In' ? 'Car is ready for diagnostics' :
+                   user.bookings[0].status === 'Repairing' ? 'Engineer is actively working on your car' :
+                   'Final inspections underway'}
+                </p>
+              </div>
+            )}
+
+            <button onClick={() => setSelectedBookingForDetails(user.bookings[0])} className="mt-4 w-full py-2 text-xs font-bold bg-slate-200 dark:bg-gray-700 text-slate-700 dark:text-gray-300 rounded-lg hover:bg-cyber-primary hover:text-white transition-colors">View Details</button>
           </div>
         )}
 
@@ -3042,8 +3133,13 @@ const App: React.FC = () => {
             <button onClick={() => navigate(View.WORKSHOP_LIST)} className="text-xs text-cyber-primary">See All</button>
           </div>
           <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
-            {workshops.map(shop => (
-              <div key={shop.id} className="min-w-[200px] glass-panel rounded-2xl overflow-hidden hover:border-cyber-primary/50 transition-colors" onClick={() => { setSelectedWorkshop(shop); navigate(View.WORKSHOP_DETAIL); }}>
+            {workshops.map(shop => {
+              const isNew = shop.createdAt && new Date().getTime() - new Date(shop.createdAt).getTime() < 24 * 60 * 60 * 1000;
+              return (
+              <div key={shop.id} className="min-w-[200px] glass-panel rounded-2xl overflow-hidden hover:border-cyber-primary/50 transition-colors relative" onClick={() => { setSelectedWorkshop(shop); navigate(View.WORKSHOP_DETAIL); }}>
+                {isNew && (
+                  <div className="absolute top-2 right-2 bg-cyber-primary text-white text-[9px] font-bold px-2 py-0.5 rounded-full z-10 shadow-lg neon-border">NEW</div>
+                )}
                 <img src={shop.image} className="w-full h-24 object-cover" alt={shop.name} title={shop.name} />
                 <div className="p-3">
                   <h4 className="font-bold text-sm truncate text-slate-900 dark:text-white">{shop.name}</h4>
@@ -3056,7 +3152,8 @@ const App: React.FC = () => {
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
@@ -3908,7 +4005,7 @@ const App: React.FC = () => {
     
     // 7-day rolling calendar
     const dates = Array.from({ length: 7 }, (_, i) => {
-      const isE2E = window.location.href.includes('localhost') || window.location.href.includes('127.0.0.1') || navigator.userAgent.includes('Headless');
+      const isE2E = navigator.userAgent.includes('Headless');
       const d = isE2E ? new Date('2026-10-12T00:00:00') : new Date();
       d.setDate(d.getDate() + i);
       const dayName = d.toLocaleDateString('en-US', { weekday: 'short' });
@@ -4052,7 +4149,12 @@ const App: React.FC = () => {
 
         <button
           onClick={handleConfirmBooking}
-          className="w-full bg-gradient-to-r from-cyber-primary to-blue-600 text-white font-bold py-4 rounded-xl shadow-[0_0_20px_rgba(59,130,246,0.5)] mt-6"
+          disabled={!selectedTimeSlot}
+          className={`w-full font-bold py-4 rounded-xl mt-6 transition-all ${
+            selectedTimeSlot 
+              ? 'bg-gradient-to-r from-cyber-primary to-blue-600 text-white shadow-[0_0_20px_rgba(59,130,246,0.5)]' 
+              : 'bg-gray-300 dark:bg-gray-700 text-gray-500 cursor-not-allowed'
+          }`}
         >
           Confirm Booking
         </button>
@@ -4615,7 +4717,10 @@ const App: React.FC = () => {
               </div>
             </div>
             {msg.action === 'WINCH' && (
-               <button onClick={() => requestWinch()} className="mt-2 text-sm bg-red-500 text-white px-4 py-2 rounded-lg shadow-md hover:bg-red-600 transition-colors">Request Emergency Winch</button>
+               <button onClick={() => { setWinchStatus('idle'); navigate(View.WINCH_NEGOTIATION); }} className="mt-2 text-sm bg-red-500 text-white px-4 py-2 rounded-lg shadow-md hover:bg-red-600 transition-colors">Request Emergency Winch</button>
+            )}
+            {msg.action === 'WORKSHOP' && (
+               <button onClick={() => navigate(View.WORKSHOP_LIST)} className="mt-2 text-sm bg-cyber-primary text-white px-4 py-2 rounded-lg shadow-md hover:bg-blue-600 transition-colors">Find Nearby Workshops</button>
             )}
           </div>
         ))}
@@ -4722,8 +4827,54 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-4">
-          {filteredWorkshops.map(shop => (
-            <div key={shop.id} onClick={() => { setSelectedWorkshop(shop); navigate(View.WORKSHOP_DETAIL); }} className="glass-panel p-4 rounded-2xl flex gap-4 hover:border-cyber-primary transition-all cursor-pointer group">
+          {/* Online & Working Workshops Section */}
+          <div className="mb-6">
+            <h3 className="font-display font-bold text-lg flex items-center gap-2 mb-3 text-slate-900 dark:text-white">
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+              Online & Working
+            </h3>
+            <div className="flex gap-4 overflow-x-auto pb-2 no-scrollbar">
+              {filteredWorkshops
+                .filter(shop => {
+                  const isNew = shop.createdAt && new Date().getTime() - new Date(shop.createdAt).getTime() < 24 * 60 * 60 * 1000;
+                  // For demo purposes, we consider new workshops and some others as 'Online'
+                  return isNew || Number(shop.id.replace(/\D/g, '')) % 2 !== 0; 
+                })
+                .slice(0, 5)
+                .map(shop => {
+                  const isNew = shop.createdAt && new Date().getTime() - new Date(shop.createdAt).getTime() < 24 * 60 * 60 * 1000;
+                  return (
+                    <div key={`online-${shop.id}`} onClick={() => { setSelectedWorkshop(shop); navigate(View.WORKSHOP_DETAIL); }} className="min-w-[160px] glass-panel rounded-2xl overflow-hidden hover:border-cyber-primary/50 transition-colors relative cursor-pointer flex-shrink-0">
+                      {isNew && (
+                        <div className="absolute top-2 right-2 bg-cyber-primary text-white text-[9px] font-bold px-2 py-0.5 rounded-full z-10 shadow-lg neon-border">NEW</div>
+                      )}
+                      <div className="absolute top-2 left-2 bg-green-500/90 backdrop-blur-sm text-white text-[9px] font-bold px-2 py-0.5 rounded-full z-10 flex items-center gap-1 shadow-lg">
+                        <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span>
+                        ONLINE
+                      </div>
+                      <img src={shop.image} className="w-full h-20 object-cover" alt={shop.name} />
+                      <div className="p-3">
+                        <h4 className="font-bold text-sm truncate text-slate-900 dark:text-white">{shop.name}</h4>
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 truncate">{shop.specialty}</p>
+                      </div>
+                    </div>
+                  );
+              })}
+              {filteredWorkshops.length === 0 && (
+                 <p className="text-gray-500 text-xs">No online workshops currently.</p>
+              )}
+            </div>
+          </div>
+
+          <h3 className="font-display font-bold text-lg mb-2 text-slate-900 dark:text-white">All Workshops</h3>
+          {filteredWorkshops.map(shop => {
+            const isNew = shop.createdAt && new Date().getTime() - new Date(shop.createdAt).getTime() < 24 * 60 * 60 * 1000;
+            return (
+
+            <div key={shop.id} onClick={() => { setSelectedWorkshop(shop); navigate(View.WORKSHOP_DETAIL); }} className="glass-panel p-4 rounded-2xl flex gap-4 hover:border-cyber-primary transition-all cursor-pointer group relative">
+              {isNew && (
+                <div className="absolute top-2 left-2 bg-cyber-primary text-white text-[9px] font-bold px-2 py-0.5 rounded-full z-10 shadow-lg neon-border">NEW</div>
+              )}
               <img src={shop.image} className="w-24 h-24 rounded-xl object-cover" alt={shop.name} title={shop.name} />
               <div className="flex-1">
                 <div className="flex justify-between items-start">
@@ -4750,14 +4901,31 @@ const App: React.FC = () => {
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );
   };
 
   const renderWorkshopDetail = () => {
-    if (!selectedWorkshop) return null;
+    if (!selectedWorkshop) {
+      return (
+        <div className="flex flex-col h-screen bg-slate-100 dark:bg-black items-center justify-center p-6 text-center">
+          <div className="w-16 h-16 rounded-full bg-cyber-primary/10 text-cyber-primary flex items-center justify-center mb-6">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">No Workshop Selected</h2>
+          <p className="text-gray-500 mb-8">Please select a workshop from the directory to view its details and book an appointment.</p>
+          <button 
+            onClick={() => navigate(View.WORKSHOP_DIRECTORY)}
+            className="bg-cyber-primary text-white px-8 py-3 rounded-xl font-bold shadow-[0_0_15px_rgba(59,130,246,0.3)] hover:scale-105 transition-all"
+          >
+            Browse Workshops
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="flex flex-col h-screen bg-slate-100 dark:bg-black relative">
         <div className="absolute top-0 left-0 right-0 h-64 z-0">
@@ -5094,6 +5262,22 @@ const App: React.FC = () => {
                     <span className="text-gray-500">Total Paid</span>
                     <span className="font-bold text-slate-900 dark:text-white">{booking.price}</span>
                   </div>
+                  {['Checked-In', 'Repairing', 'Quality Check'].includes(booking.status) && (
+                    <div className="mt-3">
+                      <div className="flex justify-between text-[10px] text-gray-500 font-bold uppercase mb-1">
+                        <span>Progress</span>
+                        <span>{booking.progress}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 dark:bg-gray-700 h-2 rounded-full overflow-hidden">
+                        <div className="bg-cyber-primary h-2 rounded-full transition-all duration-500" style={{ width: `${booking.progress}%` }} />
+                      </div>
+                      <div className="text-xs text-cyber-primary font-bold mt-1 text-center animate-pulse">
+                        {booking.status === 'Checked-In' ? 'Car is ready for diagnostics' :
+                         booking.status === 'Repairing' ? 'Engineer is working on your car' :
+                         'Final inspections underway'}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )) : (
                 <p className="text-center text-gray-500 py-4">No bookings yet.</p>
@@ -5909,6 +6093,7 @@ const App: React.FC = () => {
 
         {/* Global Wallet Top Up Modal Overlay */}
         {showTopUpModal && renderTopUpModal()}
+        {renderBookingDetailsModal()}
       </div>
     </div>
   );

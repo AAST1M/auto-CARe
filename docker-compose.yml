@@ -4,10 +4,13 @@ services:
   frontend:
     build:
       context: ./frontend
+    # Run vite dev server with host binding for Docker
+    command: npx vite --host 0.0.0.0 --port 3000
     ports:
-      - "3000:80"
-      - "3001:80"
-      - "3002:80"
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
     depends_on:
       - backend
     environment:
@@ -16,14 +19,19 @@ services:
   backend:
     build:
       context: ./backend
+    # Run backend using tsx watch for hot-reloading
+    command: npx tsx watch src/index.ts
     ports:
       - "5001:5001"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
       - PORT=5001
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/autocare
       - JWT_SECRET=super_secret_jwt_key_that_is_at_least_32_chars_long
-      - ALLOWED_ORIGIN=http://localhost:3000,http://localhost:3001,http://localhost:3002
+      - ALLOWED_ORIGIN=http://localhost:3000
       - REDIS_URL=redis://redis:6379
     depends_on:
       - db

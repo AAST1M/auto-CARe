@@ -123,6 +123,7 @@ import partsRoutes from './routes/parts';
 import chatRoutes from './routes/chat';
 import biddingRoutes from './routes/bidding';
 import walletRoutes from './routes/wallet';
+import utilsRoutes from './routes/utils';
 import { setIo } from './routes/workshops';
 
 // ─── ROUTES ───────────────────────────────────────────────────────────────────
@@ -135,6 +136,7 @@ app.use('/api/parts', partsRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/bidding', biddingRoutes);
 app.use('/api/wallet', walletRoutes);
+app.use('/api/utils', utilsRoutes);
 
 // Pass the io instance to workshops so it can emit real-time events
 setIo(io);

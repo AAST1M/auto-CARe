@@ -210,13 +210,24 @@ router.post('/register', async (req, res) => {
             name: defaultWorkshopName,
             address: defaultWorkshopLocation,
             services: JSON.stringify(['General Maintenance', 'Inspection']),
-            ownerId: createdUser.id
+            ownerId: createdUser.id,
+            image: 'https://images.unsplash.com/photo-1625047509168-a7026f36de04?auto=format&fit=crop&q=80', // Default image
+            rating: 5.0, // New workshops start with a perfect score baseline or 0
+            distance: '0.0 km',
+            specialty: 'General Repair'
           }
         });
 
         return createdUser;
       });
       user = result;
+      // Clear cache so the new workshop appears immediately
+      try {
+        const { clearCache } = require('../lib/redis');
+        await clearCache('workshops:all');
+      } catch (e) {
+        console.error('Failed to clear workshops cache:', e);
+      }
     } else {
       user = await prisma.user.create({
         data: {
@@ -441,7 +452,10 @@ router.post('/forgot-password', async (req, res) => {
 
     sendPasswordResetEmail(user.email, user.name || 'User', resetLink).catch(err => console.error(err));
 
-    res.json({ message: 'If an account exists, a password reset link has been sent.' });
+    res.json({ 
+      message: 'If an account exists, a password reset link has been sent.',
+      resetLink: process.env.NODE_ENV !== 'production' ? resetLink : undefined
+    });
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }

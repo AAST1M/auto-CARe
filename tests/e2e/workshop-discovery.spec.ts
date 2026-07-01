@@ -55,11 +55,19 @@ test.describe('Workshop Discovery', () => {
     // Select Date (e.g. index 2 -> Wed 14)
     await page.locator('button:has-text("14")').click();
 
-    // Select Time Slot
-    await page.locator('button:has-text("11:00 AM")').click();
+    // Assert Confirm Booking is disabled before time is selected
+    const confirmBtn = page.getByRole('button', { name: 'Confirm Booking' });
+    await expect(confirmBtn).toBeDisabled();
 
-    // Select Payment Method Cash
-    await page.locator('div:has-text("Cash on Delivery")').last().click();
+    // Select Time Slot (First available)
+    await page.locator('button:not([disabled])').filter({ hasText: /AM|PM/ }).first().click();
+
+    // Assert Confirm Booking is now enabled
+    await expect(confirmBtn).toBeEnabled();
+
+    // Select Payment Method Visa
+    // The Visa radio button might just be clicked via its text
+    await page.locator('div:has-text("Visa")').last().click();
 
     // Confirm Booking
     await page.getByRole('button', { name: 'Confirm Booking' }).click();

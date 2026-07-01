@@ -142,7 +142,7 @@ export const WinchLiveUser: React.FC<WinchLiveUserProps> = ({ bookingId, onBack 
               });
             }
           },
-          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          { enableHighAccuracy: false, timeout: 15000, maximumAge: 30000 }
         );
       } else {
         // Fallback

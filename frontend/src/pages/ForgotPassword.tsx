@@ -9,12 +9,14 @@ const ForgotPassword = () => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [resetLink, setResetLink] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setMessage('');
     setError('');
+    setResetLink('');
 
     try {
       const response = await fetch(`${API_URL}/api/auth/forgot-password`, {
@@ -29,6 +31,9 @@ const ForgotPassword = () => {
         setError(data.error || 'Failed to send reset email');
       } else {
         setMessage(data.message);
+        if (data.resetLink) {
+          setResetLink(data.resetLink);
+        }
         setEmail('');
       }
     } catch (err) {
@@ -66,8 +71,18 @@ const ForgotPassword = () => {
         )}
 
         {message && (
-          <div className="bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 p-3 rounded-lg text-sm mb-6 text-center border border-green-200 dark:border-green-800">
-            {message}
+          <div className="bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 p-4 rounded-lg text-sm mb-6 text-center border border-green-200 dark:border-green-800">
+            <div>{message}</div>
+            {resetLink && (
+              <div className="mt-4 pt-3 border-t border-green-200 dark:border-green-800">
+                <a 
+                  href={resetLink} 
+                  className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow transition-colors"
+                >
+                  Reset Password Now (Dev Mode)
+                </a>
+              </div>
+            )}
           </div>
         )}
 

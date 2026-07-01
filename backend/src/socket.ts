@@ -266,10 +266,24 @@ export function setupSocket(io: Server) {
     });
 
     // ── Driver COUNTERS ────────────────────────────────────────────────────────
-    socket.on('driver_counter_offer', (data: { customerSocketId: string, driverId: string, price: number }) => {
+    socket.on('driver_counter_offer', (data: { customerSocketId: string, driverId: string, price: number, driverName?: string, vehicle?: string, eta?: string }) => {
       const customerSocket = io.sockets.sockets.get(data.customerSocketId);
       if (customerSocket) {
-        customerSocket.emit('driver_countered', { driverId: data.driverId, price: data.price });
+        customerSocket.emit('driver_countered', {
+          driverId: data.driverId,
+          price: data.price,
+          driverName: data.driverName,
+          vehicle: data.vehicle,
+          eta: data.eta,
+        });
+      }
+    });
+
+    // ── Customer COUNTERS back ─────────────────────────────────────────────────
+    socket.on('customer_counter_offer', (data: { driverSocketId: string, customerId: string, price: number }) => {
+      const driverSocket = io.sockets.sockets.get(data.driverSocketId);
+      if (driverSocket) {
+        driverSocket.emit('customer_countered', { customerId: data.customerId, price: data.price });
       }
     });
 

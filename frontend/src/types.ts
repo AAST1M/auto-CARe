@@ -89,6 +89,9 @@ export interface UserBooking {
   date: string;
   status: 'Confirmed' | 'Completed' | 'Cancelled' | 'Pending' | 'In Progress';
   price: string;
+  address?: string;
+  lat?: number;
+  lng?: number;
 }
 
 export interface WorkshopAppointment {

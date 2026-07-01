@@ -23,6 +23,7 @@ router.get('/', async (req, res) => {
     if (cached && Array.isArray(cached) && cached.length > 0) return res.json(cached);
 
     let workshops = await prisma.workshop.findMany({
+      where: { owner: { approvalStatus: 'APPROVED' } },
       include: { owner: { select: { name: true, taxCard: true } } }
     });
 
@@ -92,7 +93,7 @@ router.get('/appointments', authenticateToken, async (req: AuthRequest, res) => 
       const workshops = await prisma.workshop.findMany({ where: { ownerId: userId } });
       const workshopIds = workshops.map(w => w.id);
 
-      let appointments = await prisma.appointment.findMany({
+      const appointments = await prisma.appointment.findMany({
         where: { workshopId: { in: workshopIds } },
         include: {
           user: { select: { name: true, email: true, phone: true } },
@@ -101,129 +102,13 @@ router.get('/appointments', authenticateToken, async (req: AuthRequest, res) => 
         orderBy: { createdAt: 'desc' }
       });
 
-      if (appointments.length === 0 && workshopIds.length > 0) {
-        let dummyUser = await prisma.user.findFirst({ where: { email: 'dummy_customer@example.com' } });
-        if (!dummyUser) {
-          dummyUser = await prisma.user.create({
-            data: {
-              email: 'dummy_customer@example.com',
-              passwordHash: 'dummy_hash',
-              name: 'Ahmed Ali',
-              phone: '01000000000',
-              role: 'USER',
-              approvalStatus: 'APPROVED',
-              userNationalId: '12345678901234',
-              userPlateNumber: 'ABC 123',
-              carBrand: 'BMW',
-              carModel: '320i',
-              carYear: 2020,
-              carPhotoFront: 'dummy',
-              carPhotoBack: 'dummy',
-              carPhotoRight: 'dummy',
-              carPhotoLeft: 'dummy'
-            }
-          });
-        }
-
-        let dummyUser2 = await prisma.user.findFirst({ where: { email: 'sara_h@example.com' } });
-        if (!dummyUser2) {
-          dummyUser2 = await prisma.user.create({
-            data: {
-              email: 'sara_h@example.com',
-              passwordHash: 'dummy_hash',
-              name: 'Sara H.',
-              phone: '01000000001',
-              role: 'USER',
-              approvalStatus: 'APPROVED',
-              userNationalId: '12345678901235',
-              userPlateNumber: 'XYZ 999',
-              carBrand: 'Kia',
-              carModel: 'Cerato',
-              carYear: 2018,
-              carPhotoFront: 'dummy',
-              carPhotoBack: 'dummy',
-              carPhotoRight: 'dummy',
-              carPhotoLeft: 'dummy'
-            }
-          });
-        }
-
-        let dummyUser3 = await prisma.user.findFirst({ where: { email: 'mohamed_salah@example.com' } });
-        if (!dummyUser3) {
-          dummyUser3 = await prisma.user.create({
-            data: {
-              email: 'mohamed_salah@example.com',
-              passwordHash: 'dummy_hash',
-              name: 'Mohamed Salah',
-              phone: '01000000002',
-              role: 'USER',
-              approvalStatus: 'APPROVED',
-              userNationalId: '12345678901236',
-              userPlateNumber: 'ABD 123',
-              carBrand: 'Jeep',
-              carModel: 'Wrangler',
-              carYear: 2019,
-              carPhotoFront: 'dummy',
-              carPhotoBack: 'dummy',
-              carPhotoRight: 'dummy',
-              carPhotoLeft: 'dummy'
-            }
-          });
-        }
-
-        const mockData = [
-          {
-            workshopId: workshopIds[0],
-            userId: dummyUser.id,
-            serviceType: 'Oil Change',
-            date: new Date().toISOString().split('T')[0],
-            time: '10:00 AM',
-            carDetails: 'BMW 320i',
-            price: 1200,
-            status: 'Pending'
-          },
-          {
-            workshopId: workshopIds[0],
-            userId: dummyUser2.id,
-            serviceType: 'Brake Pads',
-            date: new Date().toISOString().split('T')[0],
-            time: '01:00 PM',
-            carDetails: 'Kia Cerato',
-            price: 850,
-            status: 'Confirmed'
-          },
-          {
-            workshopId: workshopIds[0],
-            userId: dummyUser3.id,
-            serviceType: 'Suspension',
-            date: new Date().toISOString().split('T')[0],
-            time: '03:00 PM',
-            carDetails: 'Jeep Wrangler',
-            price: 2500,
-            status: 'Checked-In'
-          }
-        ];
-        
-        for (const data of mockData) {
-          await prisma.appointment.create({ data });
-        }
-
-        appointments = await prisma.appointment.findMany({
-          where: { workshopId: { in: workshopIds } },
-          include: {
-            user: { select: { name: true, email: true, phone: true } },
-            workshop: { select: { name: true } }
-          },
-          orderBy: { createdAt: 'desc' }
-        });
-      }
 
       return res.json(appointments);
     } else {
       const appointments = await prisma.appointment.findMany({
         where: { userId },
         include: {
-          workshop: { select: { name: true, specialty: true, priceEstimate: true } }
+          workshop: { select: { name: true, specialty: true, priceEstimate: true, address: true, latitude: true, longitude: true } }
         },
         orderBy: { createdAt: 'desc' }
       });
@@ -461,7 +346,7 @@ router.post('/:id/book', authenticateToken, async (req: AuthRequest, res) => {
 
     // ─── Wallet payment ────────────────────────────────────────────────────────
     const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
-    if (paymentMethod !== 'cash') {
+    if (paymentMethod === 'wallet') {
       if (!user || user.walletBalance < parsedPrice) {
         return res.status(402).json({ error: 'Insufficient funds in digital wallet. Please choose Cash on Delivery or top up your wallet.' });
       }
@@ -482,6 +367,24 @@ router.post('/:id/book', authenticateToken, async (req: AuthRequest, res) => {
             amount: parsedPrice,
             commission: parsedPrice * 0.1,
             type: 'Workshop',
+            status: 'Completed'
+          }
+        });
+      });
+    } else if (paymentMethod === 'card') {
+      // Simulate successful Visa payment without deducting from user's in-app wallet
+      await prisma.$transaction(async (tx) => {
+        await tx.user.update({
+          where: { id: workshop!.ownerId },
+          data: { walletBalance: { increment: parsedPrice * 0.9 } }
+        });
+        await tx.transaction.create({
+          data: {
+            userId: user!.id,
+            providerId: workshop!.ownerId,
+            amount: parsedPrice,
+            commission: parsedPrice * 0.1,
+            type: 'Workshop - Visa',
             status: 'Completed'
           }
         });

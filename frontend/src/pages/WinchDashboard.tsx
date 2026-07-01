@@ -115,6 +115,15 @@ export const WinchDashboard = () => {
 
     socket.on('booking_error', (data: any) => alert(data.message));
 
+    // ── Customer counters the driver's offer ──────────────────────────────────
+    socket.on('customer_countered', (data: { customerId: string; price: number }) => {
+      setActiveRequest((prev: any) => {
+        if (!prev) return prev;
+        return { ...prev, price: data.price };
+      });
+      alert(`Customer counter-offered: ${data.price} EGP. Adjust your price and respond.`);
+    });
+
     socket.on('driver_error', (data: any) => {
       alert(data.message);
       setIsOnline(false);
@@ -602,6 +611,16 @@ export const WinchDashboard = () => {
                   </button>
                 </div>
               </div>
+              {activeRequest.price > activeRequest.originalPrice && (
+                <p className="text-xs text-amber-500 font-semibold text-center -mt-1">
+                  ↑ Price increased — Accept is locked. Use <strong>Counter Offer</strong> to propose this price.
+                </p>
+              )}
+              {activeRequest.price < activeRequest.originalPrice && (
+                <p className="text-xs text-green-500 font-semibold text-center -mt-1">
+                  ↓ You offered a discount — Accept to confirm at {activeRequest.price} EGP.
+                </p>
+              )}
 
               <div className="flex gap-2">
                 <button 
@@ -616,7 +635,10 @@ export const WinchDashboard = () => {
                       socketRef.current.emit('driver_counter_offer', {
                         customerSocketId: activeRequest.customerSocketId,
                         driverId: socketRef.current.id,
-                        price: activeRequest.price
+                        price: activeRequest.price,
+                        driverName: safeUser.name || 'Driver',
+                        vehicle: 'Flatbed Heavy-Duty',
+                        eta: eta || '~10 min',
                       });
                       alert(`Counter offer of ${activeRequest.price} EGP sent! Waiting for customer...`);
                       setTimer(30);
@@ -627,8 +649,10 @@ export const WinchDashboard = () => {
                   Counter Offer
                 </button>
                 <button 
-                  onClick={handleAccept} 
-                  className="flex-1 bg-cyber-primary text-white py-3 rounded-xl font-bold shadow-lg hover:bg-blue-600 transition"
+                  onClick={handleAccept}
+                  disabled={activeRequest.price > activeRequest.originalPrice}
+                  title={activeRequest.price > activeRequest.originalPrice ? 'Price is higher than customer\'s offer — use Counter Offer instead' : 'Accept at this price'}
+                  className={`flex-1 py-3 rounded-xl font-bold shadow-lg transition ${activeRequest.price > activeRequest.originalPrice ? 'bg-gray-300 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed opacity-60' : 'bg-cyber-primary text-white hover:bg-blue-600'}`}
                 >
                   Accept
                 </button>

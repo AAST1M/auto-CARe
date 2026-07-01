@@ -128,12 +128,13 @@ export const AIChat = () => {
         mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
 
         mediaRecorder.onstop = async () => {
-          const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+          const actualMimeType = mediaRecorder.mimeType || 'audio/webm';
+          const audioBlob = new Blob(audioChunks, { type: actualMimeType });
           const reader = new FileReader();
           reader.readAsDataURL(audioBlob);
           reader.onloadend = () => {
             const base64 = (reader.result as string).split(',')[1];
-            handleSendMessage({ mimeType: 'audio/webm', data: base64 });
+            handleSendMessage({ mimeType: actualMimeType, data: base64 });
           };
           stream.getTracks().forEach(track => track.stop());
         };
