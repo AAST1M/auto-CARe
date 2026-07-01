@@ -61,6 +61,7 @@ export interface Workshop {
   lat?: number;
   lng?: number;
   description?: string;
+  createdAt?: string;
 }
 
 export interface WinchOffer {
@@ -87,11 +88,12 @@ export interface UserBooking {
   id: string;
   serviceName: string; // Workshop Name or Winch
   date: string;
-  status: 'Confirmed' | 'Completed' | 'Cancelled' | 'Pending' | 'In Progress';
+  status: 'Confirmed' | 'Completed' | 'Cancelled' | 'Pending' | 'In Progress' | 'Checked-In' | 'Repairing' | 'Quality Check' | 'Ready' | string;
   price: string;
   address?: string;
   lat?: number;
   lng?: number;
+  progress?: number;
 }
 
 export interface WorkshopAppointment {

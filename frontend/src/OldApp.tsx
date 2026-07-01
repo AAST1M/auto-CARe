@@ -3033,7 +3033,12 @@ const App: React.FC = () => {
                   <span>{user.bookings[0].progress}%</span>
                 </div>
                 <div className="w-full bg-gray-200 dark:bg-gray-700 h-2.5 rounded-full overflow-hidden">
-                  <div className="bg-cyber-primary h-2.5 rounded-full transition-all duration-700 relative" style={{ width: `${user.bookings[0].progress}%` }}>
+                  <style>{`
+                    #progress-bar-${user.bookings[0].id} {
+                      width: ${user.bookings[0].progress}%;
+                    }
+                  `}</style>
+                  <div id={`progress-bar-${user.bookings[0].id}`} className="bg-cyber-primary h-2.5 rounded-full transition-all duration-700 relative">
                     <div className="absolute top-0 bottom-0 left-0 right-0 bg-white/20 animate-pulse"></div>
                   </div>
                 </div>
@@ -4412,7 +4417,12 @@ const App: React.FC = () => {
                       <span className="text-xs text-gray-500">{car.workshop?.name || 'Workshop'}</span>
                     </div>
                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-2">
-                      <div className="bg-cyber-primary h-2 rounded-full transition-all duration-500" style={{ width: `${car.progress || 0}%` }} />
+                      <style>{`
+                        #progress-bar-${car.id} {
+                          width: ${car.progress || 0}%;
+                        }
+                      `}</style>
+                      <div id={`progress-bar-${car.id}`} className="bg-cyber-primary h-2 rounded-full transition-all duration-500" />
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-xs font-bold text-cyber-primary">{car.status}</span>
@@ -4918,7 +4928,7 @@ const App: React.FC = () => {
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">No Workshop Selected</h2>
           <p className="text-gray-500 mb-8">Please select a workshop from the directory to view its details and book an appointment.</p>
           <button 
-            onClick={() => navigate(View.WORKSHOP_DIRECTORY)}
+            onClick={() => navigate(View.WORKSHOP_LIST)}
             className="bg-cyber-primary text-white px-8 py-3 rounded-xl font-bold shadow-[0_0_15px_rgba(59,130,246,0.3)] hover:scale-105 transition-all"
           >
             Browse Workshops
@@ -5269,7 +5279,12 @@ const App: React.FC = () => {
                         <span>{booking.progress}%</span>
                       </div>
                       <div className="w-full bg-gray-200 dark:bg-gray-700 h-2 rounded-full overflow-hidden">
-                        <div className="bg-cyber-primary h-2 rounded-full transition-all duration-500" style={{ width: `${booking.progress}%` }} />
+                        <style>{`
+                          #progress-bar-${booking.id} {
+                            width: ${booking.progress}%;
+                          }
+                        `}</style>
+                        <div id={`progress-bar-${booking.id}`} className="bg-cyber-primary h-2 rounded-full transition-all duration-500" />
                       </div>
                       <div className="text-xs text-cyber-primary font-bold mt-1 text-center animate-pulse">
                         {booking.status === 'Checked-In' ? 'Car is ready for diagnostics' :

@@ -309,8 +309,13 @@ export const WorkshopDashboard = () => {
                              <span className="text-xs text-gray-500">{car.user?.name || 'Unknown User'}</span>
                            </div>
                            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-2">
-                             <div className="bg-cyber-primary h-2 rounded-full transition-all duration-500" style={{ width: `${car.progress || 0}%` }} />
-                           </div>
+                              <style>{`
+                                #progress-bar-dash-${car.id} {
+                                  width: ${car.progress || 0}%;
+                                }
+                              `}</style>
+                              <div id={`progress-bar-dash-${car.id}`} className="bg-cyber-primary h-2 rounded-full transition-all duration-500" />
+                            </div>
                            <div className="flex justify-between items-center">
                              <span className="text-xs font-bold text-cyber-primary">{car.status}</span>
                              {car.status !== 'Completed' && (
