@@ -1,37 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { diagnoseCarIssue } from './geminiService';
+import { diagnoseCarIssue, MediaInput } from './geminiService';
 import { API_URL } from '../config';
 
-// Mock the config module to ensure API_URL is known
-vi.mock('../config', () => ({
-  API_URL: 'http://localhost:3000'
-}));
-
 describe('geminiService', () => {
-  let originalFetch: typeof global.fetch;
-
   beforeEach(() => {
-    // Save original fetch
-    originalFetch = global.fetch;
-    
-    // Mock fetch
-    global.fetch = vi.fn();
-    
-    // Mock localStorage
-    Storage.prototype.getItem = vi.fn(() => 'test-token');
+    vi.stubGlobal('fetch', vi.fn());
+    vi.stubGlobal('localStorage', {
+      getItem: vi.fn().mockReturnValue('test-token')
+    });
   });
 
   afterEach(() => {
-    // Restore original fetch
-    global.fetch = originalFetch;
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('should successfully diagnose an issue without media', async () => {
-    const mockResponse = { response: 'The issue is a flat tire.' };
+    const mockResponse = { reply: 'It sounds like a loose belt.', action: null };
     (global.fetch as any).mockResolvedValueOnce({
       ok: true,
-      json: async () => mockResponse,
+      json: async () => mockResponse
     });
 
     const symptom = 'My car is making a clunking noise';
@@ -43,20 +30,20 @@ describe('geminiService', () => {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer test-token'
       },
-      body: JSON.stringify({ symptom, media: undefined })
+      body: JSON.stringify({ symptom, media: undefined, language: 'ar' })
     });
-    expect(result).toBe(mockResponse.response);
+    expect(result).toEqual(mockResponse);
   });
 
   it('should successfully diagnose an issue with media', async () => {
-    const mockResponse = { response: 'The issue is a broken belt.' };
+    const mockResponse = { reply: 'That looks like a cracked hose.', action: 'BOOK_APPOINTMENT' };
     (global.fetch as any).mockResolvedValueOnce({
       ok: true,
-      json: async () => mockResponse,
+      json: async () => mockResponse
     });
 
     const symptom = 'What is this broken thing?';
-    const media = { mimeType: 'image/jpeg', data: 'base64data' };
+    const media: MediaInput = { mimeType: 'image/jpeg', data: 'base64data' };
     const result = await diagnoseCarIssue(symptom, media);
 
     expect(global.fetch).toHaveBeenCalledWith(`${API_URL}/api/gemini/diagnose`, {
@@ -65,20 +52,18 @@ describe('geminiService', () => {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer test-token'
       },
-      body: JSON.stringify({ symptom, media })
+      body: JSON.stringify({ symptom, media, language: 'ar' })
     });
-    expect(result).toBe(mockResponse.response);
+    expect(result).toEqual(mockResponse);
   });
 
   it('should handle a missing token in localStorage', async () => {
-    const mockResponse = { response: 'Test response' };
+    (global.localStorage.getItem as any).mockReturnValueOnce(null);
+    const mockResponse = { reply: 'Success', action: null };
     (global.fetch as any).mockResolvedValueOnce({
       ok: true,
-      json: async () => mockResponse,
+      json: async () => mockResponse
     });
-    
-    // Override getItem for this test specifically
-    Storage.prototype.getItem = vi.fn(() => null);
 
     const result = await diagnoseCarIssue('test');
 
@@ -88,48 +73,53 @@ describe('geminiService', () => {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer '
       },
-      body: JSON.stringify({ symptom: 'test', media: undefined })
+      body: JSON.stringify({ symptom: 'test', media: undefined, language: 'ar' })
     });
-    expect(result).toBe(mockResponse.response);
+    expect(result).toEqual(mockResponse);
   });
 
   it('should handle HTTP errors gracefully', async () => {
     (global.fetch as any).mockResolvedValueOnce({
       ok: false,
-      status: 500,
+      status: 500
     });
 
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const result = await diagnoseCarIssue('engine light on');
 
-    expect(result).toBe("Connection to AI Core interrupted. Please check your network or try again later.");
+    expect(result).toEqual({
+      reply: "Connection to AI Core interrupted. Please check your network or try again later.",
+      action: null
+    });
     expect(consoleSpy).toHaveBeenCalled();
-    
-    consoleSpy.mockRestore();
   });
 
-  it('should handle API response without response field', async () => {
+  it('should handle API response without reply field', async () => {
     (global.fetch as any).mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ someOtherField: 'value' }),
+      json: async () => ({})
     });
 
     const result = await diagnoseCarIssue('engine light on');
 
-    expect(result).toBe("I'm having trouble analyzing that right now.");
+    expect(result).toEqual({
+      reply: "I'm having trouble analyzing that right now.",
+      action: null
+    });
   });
 
   it('should handle network errors gracefully', async () => {
-    (global.fetch as any).mockRejectedValueOnce(new Error('Network disconnected'));
+    (global.fetch as any).mockRejectedValueOnce(new Error('Network failure'));
 
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     const result = await diagnoseCarIssue('engine light on');
 
-    expect(result).toBe("Connection to AI Core interrupted. Please check your network or try again later.");
+    expect(result).toEqual({
+      reply: "Connection to AI Core interrupted. Please check your network or try again later.",
+      action: null
+    });
     expect(consoleSpy).toHaveBeenCalled();
-    
-    consoleSpy.mockRestore();
   });
 });
