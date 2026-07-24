@@ -20,17 +20,23 @@ test('User can login and is redirected to home', async ({ page }) => {
     await route.fulfill({ json: { totalUsers: 0 } });
   });
 
-  await page.goto('http://localhost:5173/login');
+  await page.goto('/login');
 
   // Fill in login form
-  await page.fill('input[type="email"]', 'test@example.com');
-  await page.fill('input[type="password"]', 'password123');
+  const emailInput = page.locator('input[type="email"], input[name="email"]');
+  await expect(emailInput).toBeVisible({ timeout: 10000 });
+  await emailInput.fill('test@example.com');
+
+  const passwordInput = page.locator('input[type="password"], input[name="password"]');
+  await passwordInput.fill('password123');
 
   // Click login button
-  await page.click('button[type="submit"]');
+  const submitButton = page.locator('button[type="submit"], button:has-text("Sign in"), button:has-text("Login")').first();
+  await expect(submitButton).toBeVisible();
+  await submitButton.click();
 
   // Expect to be redirected to home page, which is empty path or matching UI
-  await expect(page).toHaveURL('http://localhost:5173/');
+  await expect(page).toHaveURL('/');
 
   // Expect "3alemni" or "Auto-Care AI" header (depending on which UI rendered)
   const header = page.locator('h1.font-display').first();

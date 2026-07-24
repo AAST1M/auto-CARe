@@ -16,11 +16,11 @@ test('User can use AI Chat and trigger actions', async ({ page }) => {
     await route.fulfill({ json: { totalUsers: 0 } });
   });
 
-  await page.goto('http://localhost:5173/login');
+  await page.goto('/login');
   await page.fill('input[type="email"]', 'test@example.com');
   await page.fill('input[type="password"]', 'pass');
   await page.click('button[type="submit"]');
-  await expect(page).toHaveURL('http://localhost:5173/');
+  await expect(page).toHaveURL('/');
 
   // Open AI Chat
   await page.click('button[aria-label="AI Diagnostic"]');
