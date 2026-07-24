@@ -61,4 +61,4 @@ jobs:
         npm run build
         cd ..
         npx playwright install --with-deps
-        npx playwright test
+        cd frontend && npx playwright test
