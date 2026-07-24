@@ -61,4 +61,7 @@ jobs:
         npm run build
         cd ..
         npx playwright install --with-deps
+        npm run start --prefix backend &\
+        npm run preview --prefix frontend &\
+        npx wait-on http://localhost:5001/api/health http://localhost:4173 && \
         npx playwright test

@@ -6,6 +6,7 @@
   "scripts": {
     "test": "jest --config ./jest.config.cjs",
     "build": "tsc",
+    "start": "node dist/index.js",
     "test:watch": "jest --watchAll"
   },
   "keywords": [],
