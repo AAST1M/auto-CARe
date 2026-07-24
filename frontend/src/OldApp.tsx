@@ -1793,7 +1793,7 @@ const App: React.FC = () => {
 
     const carName = [user.carYear, user.carBrand, user.carModel].filter(Boolean).join(' ') || 'My Car';
 
-    // ── Always get a fresh GPS fix before sending to the driver ──────────────
+    // ── Always get fresh GPS coordinates before sending to the driver ────────
     const sendRequest = (pickLat: number, pickLng: number) => {
       // Persist as current coords so all subsequent operations use the real location
       setCoords({ lat: pickLat, lng: pickLng });
