@@ -1,123 +1,118 @@
 <!-- markdownlint-disable MD013 MD033 MD041 -->
 <div align="center">
   <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+
+  # 🚗 Auto-Care AI
+
+  **Next-Generation Multimodal AI Automotive Care Ecosystem & Emergency Rescue Logistics**
+
+  [![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=for-the-badge&logo=javascript&logoColor=black)](https://developer.mozilla.org/en-US/docs/Web/JavaScript)
+  [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+  [![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+  [![React](https://img.shields.io/badge/React-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
+  [![Vite](https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
+  [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+  [![Prisma](https://img.shields.io/badge/Prisma-2D3748?style=for-the-badge&logo=prisma&logoColor=white)](https://www.prisma.io/)
+  [![Gemini AI](https://img.shields.io/badge/Google_Gemini-8E75B2?style=for-the-badge&logo=googlegemini&logoColor=white)](https://ai.google.dev/)
+  [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+  [![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
+
 </div>
-
-# Auto-Care AI
-
-Auto-Care AI is a next-generation, all-in-one automotive care ecosystem. It leverages cutting-edge artificial intelligence to diagnose vehicle issues and connects drivers seamlessly with emergency winch operators, workshop owners, and spare part merchants.
-
-## 🌟 Key Features
-
-### 1. The AI Auto Doctor (Multimodal Diagnostics)
-
-Powered by the Gemini API, our AI mechanic can instantly diagnose car troubles.
-
-- **Text:** Describe your breakdown.
-- **Image:** Snap a photo of your dashboard warning lights or a broken part.
-- **Audio:** Record your engine's strange noises.
-- **Persistent Memory:** Your entire diagnostic conversation history is securely saved and loaded upon returning.
-
-### 2. Live Winch Rescue (Real-Time Logistics)
-
-- **Live Dispatch:** Request a winch truck when stranded. Available drivers in the area receive instant alerts.
-- **Live GPS Tracking:** Once a driver accepts, watch them drive to your exact location in real-time on an interactive map.
-- **Automated Digital Wallet:** When the driver clicks "Arrived / Complete," funds are automatically transferred from the user's wallet to the driver's wallet (minus a 10% platform commission) with a full transaction receipt.
-
-### 3. Smart Workshop Directory
-
-- Find the nearest top-rated mechanics and garages.
-- Filter by specialty (Transmission, Brakes, AC, Engine).
-- Book scheduled appointments instantly and check in to see live repair progress.
-
-### 4. Spare Parts Marketplace
-
-- Browse an extensive e-commerce inventory of car parts.
-- Check stock levels, compare prices, and order parts directly to your trusted workshop for installation.
-
-### 5. Multi-Role Ecosystem
-
-- **Car Owners:** Manage vehicles, book appointments, request winches, and buy parts.
-- **Winch Drivers:** Dedicated dashboard to toggle "Online", accept rescue requests, and track earnings.
-- **Workshop Owners:** Track active cars in the garage, manage mechanic workflows, and update repair statuses.
-- **Admins:** A centralized command center monitoring live platform stats, revenue, and active jobs.
 
 ---
 
-## 🚀 How to Run the App Locally
+## 💻 Tech Stack & Engineering Skills
 
-This project is a monorepo consisting of a modern React **frontend** and a secure Node.js/Express **backend** equipped with Prisma and PostgreSQL.
+```
+  Frontend   │  React • TypeScript • Vite • Tailwind CSS • Lucide Icons • Socket.io Client
+  Backend    │  Node.js • Express • WebSockets (Socket.io) • Prisma ORM • JWT Auth
+  Database   │  PostgreSQL • Redis (Caching/Rate Limiting)
+  AI / ML    │  Google Gemini Multimodal API (@google/genai)
+  Testing    │  Playwright (E2E & API Testing) • Jest • PyTest
+  DevOps     │  Docker • Docker Compose • Capacitor (Android/Mobile)
+```
+
+---
+
+## 🌟 Key Features
+
+### 🤖 1. The AI Auto Doctor (Multimodal Diagnostics)
+Powered by the **Google Gemini API**, our virtual mechanic instantly diagnoses vehicle troubles:
+* **Text Analysis:** Describe symptoms in plain natural language.
+* **Visual Inspection:** Upload photos of dashboard warning lights, engine bays, or damaged parts.
+* **Audio Diagnostic:** Record and submit strange engine/transmission noises for AI audio processing.
+* **Persistent Diagnostic History:** Diagnostic conversations are stored and resumed across user sessions.
+
+### 🚜 2. Real-Time Winch Rescue & Emergency Dispatch
+* **Live Dispatch:** One-tap emergency request broadcasting to nearby winch operators.
+* **Interactive Live GPS Tracking:** Watch driver movement in real time on interactive maps.
+* **Automated Digital Wallet:** Instant commission-handled wallet transfers upon arrival and job completion.
+
+### 🛠️ 3. Smart Workshop Directory & Progress Sync
+* Discover top-rated mechanics and garages categorized by specialty (*Brakes, Engine, AC, Transmission*).
+* Book appointments instantly and track live vehicle repair progress step-by-step.
+
+### ⚙️ 4. Spare Parts Marketplace & Vehicle Compatibility
+* E-commerce inventory with stock checking, price comparison, and vehicle compatibility verification.
+* Direct ordering to workshops for upcoming repair appointments.
+
+### 👥 5. Multi-Role Operating System
+* **Car Owners:** Diagnostics, winch requests, workshop booking, and parts purchasing.
+* **Winch Drivers:** Online status toggle, live rescue radar, and real-time wallet payout dashboard.
+* **Workshop Owners:** Garaged car workflow management, mechanic assignments, and repair status updates.
+* **Admins:** Centralized analytics command center monitoring active rescue jobs, revenue, and system metrics.
+
+---
+
+## 🛠️ Getting Started (Local Setup)
 
 ### Prerequisites
+* **Node.js** (v18+)
+* **PostgreSQL** Database
+* **Gemini API Key** ([Google AI Studio](https://aistudio.google.com/app/apikey))
 
-1. **Node.js** (v18+)
-2. **PostgreSQL** Database (Local or Cloud like Supabase/Neon)
-3. **Gemini API Key** (Get one from [Google AI Studio](https://aistudio.google.com/app/apikey))
-
-### Step-by-Step Setup
-
-#### 1. Clone the repository and install dependencies
-
-From the root folder, the install script will install the root packages, but you also need to install the subdirectories:
-
+### 1. Clone & Install Dependencies
 ```bash
+git clone https://github.com/AAST1M/auto-CARe.git
+cd auto-CARe
+
+# Install root, backend, and frontend dependencies
 npm install
 cd backend && npm install
 cd ../frontend && npm install
 cd ..
 ```
 
-#### 2. Configure the Backend Environment
+### 2. Environment Configuration
 
-Navigate to the `backend/` directory and create a `.env` file (if one doesn't exist):
-
+**Backend (`backend/.env`):**
 ```env
 PORT=5001
-DATABASE_URL="postgresql://<USER>:<PASSWORD>@localhost:5432/autocare_db"
-JWT_SECRET="your_super_secret_jwt_key_here"
+DATABASE_URL="postgresql://user:password@localhost:5432/autocare_db"
+JWT_SECRET="your_jwt_secret"
 GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
 ```
 
-#### 3. Configure the Frontend Environment
-
-Navigate to the `frontend/` directory and create a `.env` file:
-
+**Frontend (`frontend/.env`):**
 ```env
 VITE_API_URL=http://localhost:5001
 ```
 
-#### 4. Initialize the Database
-
-In the `backend/` directory, push the Prisma schema to your PostgreSQL database to create all the necessary tables (Users, WinchBookings, ChatHistory, Transactions, etc.):
-
+### 3. Database Migration & Start Server
 ```bash
 cd backend
 npx prisma db push
 npx prisma generate
-```
+cd ..
 
-#### 5. Start the Application
-
-From the **root** folder, run the development script. This uses `concurrently` to spin up both the Vite frontend and the Node.js backend simultaneously:
-
-```bash
+# Start both frontend and backend concurrently
 npm run dev
 ```
-
-- **Frontend:** Available at `http://localhost:3000` (or `3001` if busy).
-- **Backend API:** Available at `http://localhost:5001`.
+* **Frontend:** `http://localhost:3000`
+* **Backend API:** `http://localhost:5001`
 
 ---
 
-## 🛠️ Tech Stack
-
-- **Frontend:** React, Vite, Tailwind CSS, Lucide Icons, Socket.IO Client.
-- **Backend:** Node.js, Express, Socket.IO (WebSockets), Prisma ORM, JSON Web Tokens (JWT).
-- **Database:** PostgreSQL.
-- **AI Engine:** Google Gemini API (`@google/genai`).
-- **Mobile (Optional):** Expo / React Native (`mobile/` directory).
-
-## 💡 Troubleshooting
-
-- **Missing Prisma Types Error?** If your code editor highlights `prisma.chatHistory` or other database models as errors, you need to clear the TypeScript cache. Open your Command Palette (`Cmd + Shift + P`) and run **TypeScript: Restart TS server**.
-- **Port Conflicts?** If port `5001` or `3000` is already in use by another app, you can change them in the `.env` files and `package.json`. Make sure the frontend `VITE_API_URL` always points to the backend's port!
+<div align="center">
+  <i>Designed for Marwan El-Sawy • AASTMT Computer Science & Software Engineering</i>
+</div>
