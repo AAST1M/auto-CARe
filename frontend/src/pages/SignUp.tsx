@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, Moon, Sun, RefreshCw, CheckCircle, Camera, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronUp, AlertTriangle, Moon, Sun, RefreshCw, CheckCircle, Camera, X, MapPin } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
+import { useJsApiLoader } from '@react-google-maps/api';
 import {
   validateEmail,
   validatePassword,
@@ -9,6 +10,9 @@ import {
   validateName
 } from '../utils/validators';
 import { API_URL } from '../config';
+
+const GOOGLE_MAPS_KEY = import.meta.env.VITE_GOOGLE_MAPS_KEY || '';
+const GMAP_LIBRARIES: ('places' | 'geometry')[] = ['places', 'geometry'];
 
 export const SignUp = () => {
   const { login } = useAuth();
@@ -136,6 +140,55 @@ export const SignUp = () => {
   const [workshopLocation, setWorkshopLocation] = useState('');
   const [taxCard, setTaxCard] = useState('');
   const [ownerNationalIdCard, setOwnerNationalIdCard] = useState('');
+
+  const { isLoaded: isMapLoaded } = useJsApiLoader({
+    googleMapsApiKey: GOOGLE_MAPS_KEY,
+    libraries: GMAP_LIBRARIES,
+  });
+
+  const [workshopSuggestions, setWorkshopSuggestions] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!workshopLocation.trim() || workshopLocation.includes('|') || !isMapLoaded || !window.google || !window.google.maps) {
+      setWorkshopSuggestions([]);
+      return;
+    }
+
+    const delayDebounceFn = setTimeout(() => {
+      try {
+        const autocompleteService = new window.google.maps.places.AutocompleteService();
+        autocompleteService.getPlacePredictions({
+          input: workshopLocation,
+          componentRestrictions: { country: 'eg' },
+        }, (predictions, status) => {
+          if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
+            setWorkshopSuggestions(predictions);
+          } else {
+            setWorkshopSuggestions([]);
+          }
+        });
+      } catch (err) {
+        console.error("AutocompleteService failed", err);
+        setWorkshopSuggestions([]);
+      }
+    }, 400);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [workshopLocation, isMapLoaded]);
+
+  const handleSelectWorkshopSuggestion = (prediction: any) => {
+    if (!window.google || !window.google.maps) return;
+    const geocoder = new window.google.maps.Geocoder();
+    geocoder.geocode({ placeId: prediction.place_id }, (results, status) => {
+      if (status === window.google.maps.GeocoderStatus.OK && results && results[0]) {
+        const location = results[0].geometry.location;
+        const lat = location.lat();
+        const lng = location.lng();
+        setWorkshopLocation(`${prediction.description} | ${lat},${lng}`);
+        setWorkshopSuggestions([]);
+      }
+    });
+  };
 
   // Car Owner States
   const [userPlateNumber, setUserPlateNumber] = useState('');
@@ -559,7 +612,7 @@ export const SignUp = () => {
             </div>
 
             {/* Workshop Location */}
-            <div className="glass-panel rounded-xl p-1">
+            <div className="glass-panel rounded-xl p-1 relative z-20">
               <input
                 id="signup-workshop-location"
                 type="text"
@@ -568,7 +621,32 @@ export const SignUp = () => {
                 value={workshopLocation}
                 onChange={(e) => setWorkshopLocation(e.target.value)}
                 className="w-full bg-transparent p-4 outline-none text-slate-955 dark:text-white placeholder-gray-500"
+                autoComplete="off"
               />
+              {isMapLoaded && workshopSuggestions.length > 0 && (
+                <div className="absolute left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-50 overflow-hidden max-h-60 overflow-y-auto">
+                  {workshopSuggestions.map((loc) => (
+                    <button
+                      type="button"
+                      key={loc.place_id}
+                      onClick={() => handleSelectWorkshopSuggestion(loc)}
+                      className="w-full text-left p-3 hover:bg-cyber-primary/10 text-sm font-medium border-b border-gray-100 dark:border-gray-700/50 flex items-start gap-3 transition-colors text-slate-900 dark:text-white"
+                    >
+                      <MapPin className="text-gray-400 dark:text-gray-500 shrink-0 mt-0.5" size={16} />
+                      <div className="text-left">
+                        <div className="font-semibold text-slate-900 dark:text-white text-sm">
+                          {loc.structured_formatting?.main_text || loc.description}
+                        </div>
+                        {loc.structured_formatting?.secondary_text && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            {loc.structured_formatting.secondary_text}
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Tax Card */}

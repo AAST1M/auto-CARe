@@ -11,13 +11,13 @@ test.describe('AI Chat Diagnoses E2E', () => {
     await expect(page.locator('h2', { hasText: 'Create Account' })).toBeVisible({ timeout: 10000 });
 
     const testEmail = `testuser_${Date.now()}_${Math.random().toString(36).substring(7)}@example.com`;
-    await page.fill('input[placeholder="Full Name"]', 'Test Normal User');
-    await page.fill('input[type="email"]', testEmail);
-    await page.fill('input[placeholder^="Password"]', 'Password123!');
-    await page.fill('input[placeholder="Confirm Password"]', 'Password123!');
+    await page.fill('#signup-name', 'Test Normal User');
+    await page.fill('#signup-email', testEmail);
+    await page.fill('#signup-password', 'Password123!');
+    await page.fill('#signup-confirm-password', 'Password123!');
     
     // Click Continue (Signup)
-    await page.click('button:has-text("Continue")');
+    await page.click('#signup-submit');
 
     // Wait for Dashboard
     await expect(page.locator('text=Core Services')).toBeVisible({ timeout: 10000 });

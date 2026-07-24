@@ -7,7 +7,7 @@ async function main() {
   const hash = await bcrypt.hash('Password123!', 10);
   
   await prisma.user.updateMany({
-    where: { email: { in: ['sara_h@example.com', 'hdhdjdd429@gamil.com'] } },
+    where: { email: { in: ['sara_h@example.com', 'hdhdjdd429@gamil.com', 'workshop2@test.com'] } },
     data: { passwordHash: hash }
   });
 

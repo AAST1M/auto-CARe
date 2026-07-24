@@ -4,7 +4,8 @@
   "description": "<div align=\"center\"> <img width=\"1200\" height=\"475\" alt=\"GHBanner\" src=\"https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6\" /> </div>",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run test:e2e",
+    "test:e2e": "playwright test",
     "dev:frontend:3000": "cd frontend && npx vite --port 3000 --strictPort",
     "dev:frontend:3001": "cd frontend && npx vite --port 3001 --strictPort",
     "dev:frontend:3002": "cd frontend && npx vite --port 3002 --strictPort",

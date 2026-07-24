@@ -15,11 +15,11 @@ test.describe('Workshop Discovery', () => {
     await expect(page.locator('h2', { hasText: 'Welcome Back' })).toBeVisible({ timeout: 10000 });
     await page.click('a:has-text("Sign Up")');
     await expect(page.locator('h2', { hasText: 'Create Account' })).toBeVisible({ timeout: 10000 });
-    await page.fill('input[placeholder="Full Name"]', 'Test Normal User');
-    await page.fill('input[type="email"]', testEmail);
-    await page.fill('input[placeholder^="Password"]', 'Password123!');
-    await page.fill('input[placeholder="Confirm Password"]', 'Password123!');
-    await page.click('button:has-text("Continue")');
+    await page.fill('#signup-name', 'Test Normal User');
+    await page.fill('#signup-email', testEmail);
+    await page.fill('#signup-password', 'Password123!');
+    await page.fill('#signup-confirm-password', 'Password123!');
+    await page.click('#signup-submit');
 
     // Wait to reach the Dashboard
     await expect(page.locator('text=Core Services')).toBeVisible({ timeout: 10000 });
@@ -52,8 +52,8 @@ test.describe('Workshop Discovery', () => {
     // Expect to be on Checkout view
     await expect(page.locator('h2', { hasText: 'Checkout' })).toBeVisible();
 
-    // Select Date (e.g. index 2 -> Wed 14)
-    await page.locator('button:has-text("14")').click();
+    // Select Date (second available day)
+    await page.locator('button').filter({ hasText: /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)/ }).nth(1).click();
 
     // Assert Confirm Booking is disabled before time is selected
     const confirmBtn = page.getByRole('button', { name: 'Confirm Booking' });

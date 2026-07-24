@@ -6,27 +6,34 @@ test.describe('Workshop Booking Flow (End to End)', () => {
     // 1. User logs in
     await page.goto('http://localhost:3001');
     await page.fill('input[type="email"]', 'sara_h@example.com');
-    await page.fill('input[type="password"]', 'password123');
+    await page.fill('input[type="password"]', 'Password123!');
     await page.click('button:has-text("Sign In")');
 
     // Verify user is logged in by checking for Profile tab
     await expect(page.locator('button:has-text("Profile")')).toBeVisible();
 
     // 2. User goes to Workshop Directory and selects a workshop
-    await page.click('button:has-text("Workshops")');
-    await page.click('h3:has-text("ProTech AutoWorks")');
+    await page.click('button:has-text("Repair") >> nth=0');
+    await page.click('text=ProTech AutoWorks');
     
     // 3. User selects a time and books
-    await expect(page.locator('h2:has-text("ProTech AutoWorks")')).toBeVisible();
-    await page.locator('button:not([disabled])').filter({ hasText: /AM|PM/ }).first().click();
-    
-    // Select Visa payment
-    await page.locator('div:has-text("Visa / Mastercard")').last().click();
-    
-    // Click Confirm Booking
-    await page.click('button:has-text("Confirm Booking")');
-
-    // 4. Verify Success Screen
+    await expect(page.locator('h2', { hasText: 'ProTech AutoWorks' })).toBeVisible();
+    await page.click('button:has-text("Book Appointment")');
+    // Wait for checkout page to load
+    await expect(page.locator('h2', { hasText: 'Checkout' })).toBeVisible({ timeout: 10000 });
+    // Wait for time slots to finish loading (API fetch for booked slots)
+    await expect(page.locator('text=Loading available slots...')).not.toBeVisible({ timeout: 8000 });
+    // Select first available time slot (glass-panel button not disabled with AM/PM text)
+    const timeSlot = page.locator('button.glass-panel:not([disabled])').filter({ hasText: /AM|PM/ }).first();
+    await expect(timeSlot).toBeVisible({ timeout: 5000 });
+    await timeSlot.scrollIntoViewIfNeeded();
+    await timeSlot.click();
+    // Payment is optional — Confirm Booking only requires a selected time slot
+    // Click Confirm Booking (enabled once time slot is selected)
+    const confirmBtn = page.locator('button:has-text("Confirm Booking")').first();
+    await expect(confirmBtn).toBeEnabled({ timeout: 5000 });
+    await confirmBtn.scrollIntoViewIfNeeded();
+    await confirmBtn.click(); // 4. Verify Success Screen
     await expect(page.locator('h2:has-text("Booking Confirmed!")')).toBeVisible({ timeout: 10000 });
     
     // 5. User checks Recent Bookings
@@ -41,11 +48,13 @@ test.describe('Workshop Booking Flow (End to End)', () => {
     await expect(pendingBooking).toBeVisible();
 
     // 6. User Logs out
-    await page.click('button:has-text("Logout")');
+    await page.goto('http://localhost:3001/settings');
+    await page.click('button:has-text("Sign Out")');
+    await page.goto('http://localhost:3001/login');
 
     // 7. Workshop Owner Logs in
     await page.fill('input[type="email"]', 'hdhdjdd429@gamil.com'); // ProTech AutoWorks owner
-    await page.fill('input[type="password"]', 'password123');
+    await page.fill('input[type="password"]', 'Password123!');
     await page.click('button:has-text("Sign In")');
 
     // 8. Workshop Owner checks Incoming Appointments
@@ -58,16 +67,19 @@ test.describe('Workshop Booking Flow (End to End)', () => {
     // 9. Workshop Owner Clicks Accept
     await incomingBooking.locator('button:has-text("Accept")').click();
 
-    // Wait for the UI to update to Confirmed
+    // Wait for the UI to update to Confirmed (the card no longer has 'Pending' class/text, it has 'Confirmed')
     await page.waitForTimeout(2000);
-    await expect(incomingBooking.locator('button:has-text("Check In")')).toBeVisible();
+    const confirmedCard = page.locator('div.glass-panel').filter({ hasText: 'Sara' }).filter({ hasText: 'Confirmed' }).first();
+    await expect(confirmedCard.locator('button:has-text("Check In")')).toBeVisible();
 
     // 10. Logout and check User's Recent Bookings again
-    await page.click('button:has-text("Account")');
-    await page.click('button:has-text("Logout")');
+    await page.goto('http://localhost:3001/settings');
+    await page.click('button:has-text("Sign Out")');
+    await page.goto('http://localhost:3001/login');
+
     
     await page.fill('input[type="email"]', 'sara_h@example.com');
-    await page.fill('input[type="password"]', 'password123');
+    await page.fill('input[type="password"]', 'Password123!');
     await page.click('button:has-text("Sign In")');
     
     await page.click('button:has-text("Profile")');

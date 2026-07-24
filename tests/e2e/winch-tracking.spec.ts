@@ -33,6 +33,10 @@ test.describe('Winch Tracking E2E', () => {
     // --- 2. DRIVER CONTEXT ---
     const driverContext = await browser.newContext();
     const driverPage = await driverContext.newPage();
+    driverPage.on('dialog', async dialog => {
+      console.log(`[DRIVER DIALOG]: ${dialog.message()}`);
+      await dialog.accept();
+    });
     
     // Setup mock geolocation for the driver (Cairo Center)
     await driverContext.setGeolocation({ latitude: 30.0500, longitude: 31.2400 });
@@ -56,6 +60,10 @@ test.describe('Winch Tracking E2E', () => {
     // --- 3. CUSTOMER CONTEXT ---
     const userContext = await browser.newContext();
     const userPage = await userContext.newPage();
+    userPage.on('dialog', async dialog => {
+      console.log(`[USER DIALOG]: ${dialog.message()}`);
+      await dialog.accept();
+    });
 
     // Setup mock geolocation for the customer (Cairo outskirts - 500m away)
     await userContext.setGeolocation({ latitude: 30.0450, longitude: 31.2350 });
@@ -109,22 +117,34 @@ test.describe('Winch Tracking E2E', () => {
     const increasedPrice = parseInt(increasedPriceText.split(' ')[0]);
     expect(increasedPrice).toBe(initialPrice + 50);
 
-    // Accept request at the negotiated price
-    await driverPage.click('button:has-text("Accept")');
+    // Accept request at the negotiated price (clicks Counter Offer because price was increased)
+    await driverPage.click('button:has-text("Counter Offer")');
 
     // --- 5. CUSTOMER PRICE APPROVAL ---
-    // The customer should see the price approval modal because the price was changed
-    await expect(userPage.locator('h3', { hasText: 'Price Adjustment' })).toBeVisible({ timeout: 15000 });
-    // Customer accepts the new price
-    await userPage.click('button:has-text("Accept")');
+    // After driver sends counter offer, customer sees the negotiating panel with the new price.
+    // An alert dialog fires first ("A driver has sent you a price offer!") — accept it.
+    userPage.on('dialog', async d => { console.log('[USER DIALOG]:', d.message()); await d.accept(); });
+    // Wait for negotiating panel to appear (h3 shows "X Drivers Available Nearby")
+    await expect(userPage.locator('h3').filter({ hasText: /Driver.*Available|Available.*Driver/i })).toBeVisible({ timeout: 15000 });
+    // Customer clicks Accept on the updated offer
+    await userPage.locator('button:has-text("Accept")').first().click();
 
-    // --- 6. VERIFY LIVE NAVIGATION & CANCELLATION BUTTON STATE ---
+
+    // --- 6. DRIVER CONFIRMS THE FINAL REQUEST ---
+    // After customer accepts the counter offer, request_driver is re-emitted to the driver.
+    // The driver's page receives new_request again and must click Accept to confirm.
+    // The driver may see "Incoming Request" screen again with the negotiated price.
+    await expect(driverPage.locator('h2', { hasText: 'Incoming Request' })).toBeVisible({ timeout: 15000 });
+    await driverPage.locator('button:has-text("Accept")').first().click();
+
+    // --- 7. VERIFY LIVE NAVIGATION & CANCELLATION BUTTON STATE ---
     // Both pages should transition to live navigation map
     await expect(driverPage.locator('h2', { hasText: 'Live Navigation' })).toBeVisible({ timeout: 15000 });
     await expect(userPage.locator('h2', { hasText: 'Live Tracking' })).toBeVisible({ timeout: 15000 });
 
     // Customer cancellation button is active
     await expect(userPage.locator('button:has-text("Cancel Booking")')).toBeVisible();
+
 
     // --- 7. SEQUENTIAL CONFIRMATION STEPS ---
     // Driver: Arrived at Customer (Point A)

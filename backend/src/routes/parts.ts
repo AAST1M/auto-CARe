@@ -101,6 +101,14 @@ router.post('/', authenticateToken, requireRole('WORKSHOP_OWNER'), async (req: a
     const parsedYearStart = compatibilityYearStart ? parseInt(compatibilityYearStart) : null;
     const parsedYearEnd = compatibilityYearEnd ? parseInt(compatibilityYearEnd) : null;
 
+    let finalWorkshopId = workshopId;
+    if (!finalWorkshopId) {
+      const userWorkshop = await prisma.workshop.findFirst({ where: { ownerId: req.user.id } });
+      if (userWorkshop) {
+        finalWorkshopId = userWorkshop.id;
+      }
+    }
+
     const part = await prisma.sparePart.create({
       data: {
         name,
@@ -109,7 +117,7 @@ router.post('/', authenticateToken, requireRole('WORKSHOP_OWNER'), async (req: a
         stock: parsedStock,
         condition: condition || 'New',
         image: image || 'https://picsum.photos/400/300?car-part',
-        workshopId: workshopId || null,
+        workshopId: finalWorkshopId || null,
         compatibilityModel: compatibilityModel || null,
         compatibilityYearStart: parsedYearStart,
         compatibilityYearEnd: parsedYearEnd,
@@ -162,9 +170,11 @@ router.post('/order', authenticateToken, async (req: any, res) => {
       if (part.workshopId) {
         const workshop = await tx.workshop.findUnique({ where: { id: part.workshopId } });
         if (workshop) {
+           const commission = Math.min(totalPrice * 0.05, 1000);
+           const sellerShare = totalPrice - commission;
            await tx.user.update({
              where: { id: workshop.ownerId },
-             data: { walletBalance: { increment: totalPrice * 0.95 } } // Platform takes 5%
+             data: { walletBalance: { increment: sellerShare } }
            });
         }
       }

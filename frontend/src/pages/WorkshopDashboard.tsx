@@ -87,7 +87,7 @@ export const WorkshopDashboard = () => {
   };
 
   // Fallback
-  const safeUser = user || { walletBalance: 0, shopName: 'My Workshop' } as any;
+  const safeUser = user || { walletBalance: 0, workshopName: 'My Workshop' } as any;
 
   // Fetch appointments from backend
   const fetchAppointments = async () => {
@@ -111,6 +111,7 @@ export const WorkshopDashboard = () => {
   useEffect(() => {
     fetchAppointments();
     fetchMyWorkshop();
+    refreshUser();
   }, []);
 
   const handleWorkshopAction = async (id: string, action: string) => {
@@ -276,7 +277,7 @@ export const WorkshopDashboard = () => {
           <div className="p-6 pt-12 bg-gradient-to-r from-gray-900 to-cyber-900 text-white pb-8 rounded-b-3xl shadow-lg">
                <div className="flex justify-between items-center mb-6">
                    <div>
-                       <h2 className="text-2xl font-bold font-display">{safeUser.shopName || 'My Workshop'}</h2>
+                       <h2 className="text-2xl font-bold font-display">{safeUser.workshopName || 'My Workshop'}</h2>
                        <p className="text-xs text-green-400 flex items-center gap-1"><CheckCircle size={12}/> Verified Partner</p>
                    </div>
                    <div onClick={() => navigate('/profile')} className="w-10 h-10 rounded-full bg-gray-700 border border-cyber-primary overflow-hidden">
@@ -376,13 +377,13 @@ export const WorkshopDashboard = () => {
                         <span className="text-gray-500 text-sm">Available</span>
                         <span className="font-bold text-xl text-slate-900 dark:text-white">{safeUser.walletBalance} EGP</span>
                     </div>
-                    <button onClick={() => setShowWorkshopWallet(true)} className="w-full py-3 border border-cyber-primary text-cyber-primary rounded-lg font-bold hover:bg-cyber-primary hover:text-white transition">View Wallet</button>
+                    <button onClick={() => { refreshUser(); setShowWorkshopWallet(true); }} className="w-full py-3 border border-cyber-primary text-cyber-primary rounded-lg font-bold hover:bg-cyber-primary hover:text-white transition">View Wallet</button>
                 </div>
            </div>
            
             <div className="p-4 glass-panel flex justify-around items-center shrink-0">
                 <button className="text-cyber-primary flex flex-col items-center"><Calendar size={24}/><span className="text-[10px]">Bookings</span></button>
-                <button className="text-gray-400 flex flex-col items-center" onClick={() => setShowWorkshopWallet(true)}><Wallet size={24}/><span className="text-[10px]">Wallet</span></button>
+                <button className="text-gray-400 flex flex-col items-center" onClick={() => { refreshUser(); setShowWorkshopWallet(true); }}><Wallet size={24}/><span className="text-[10px]">Wallet</span></button>
                 <button className="text-gray-400 flex flex-col items-center" onClick={() => { setShowWorkshopProfile(true); setShowWorkshopWallet(false); }}><MapPin size={24}/><span className="text-[10px]">Profile</span></button>
                 <button className="text-gray-400 flex flex-col items-center" onClick={() => navigate('/profile')}><User size={24}/><span className="text-[10px]">Account</span></button>
            </div>

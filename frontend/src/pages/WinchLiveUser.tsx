@@ -71,9 +71,16 @@ export const WinchLiveUser: React.FC<WinchLiveUserProps> = ({ bookingId, onBack 
             }
           });
         }
+      } else {
+        alert(data?.error || 'Failed to load booking details.');
+        onBack();
       }
     })
-    .catch(err => console.error('Error fetching booking details:', err));
+    .catch(err => {
+      console.error('Error fetching booking details:', err);
+      alert('Network error: Could not fetch booking details.');
+      onBack();
+    });
   }, [bookingId]);
 
   // WebSocket connection for real-time tracking
@@ -164,10 +171,10 @@ export const WinchLiveUser: React.FC<WinchLiveUserProps> = ({ bookingId, onBack 
       }
     });
 
-    // Listen for driver and user GPS updates (eta/distance computed by backend)
+    // Listen for driver and user GPS updates (ignore backend-computed straight-line eta/distance to use real map directions)
     socket.on('location_updated', (data) => {
       setLocation(prev => {
-        const { status, ...rest } = data;
+        const { status, distance, eta, ...rest } = data;
         return { ...prev, ...rest };
       });
     });

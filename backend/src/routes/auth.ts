@@ -54,7 +54,13 @@ router.get('/me', authenticateToken, async (req: AuthRequest, res) => {
 // PATCH /api/auth/me — update the current user's profile
 router.patch('/me', authenticateToken, async (req: AuthRequest, res) => {
   try {
-    const { name, phone, gender, dob } = req.body;
+    const {
+      name, phone, gender, dob,
+      licenseExpiry, plateNumber, criminalRecordCert, driverPhoto, nationalIdCard,
+      taxCard, workshopLocation, ownerNationalIdCard, workshopName,
+      userPlateNumber, userNationalId, carBrand, carModel, carYear, chassisNumber,
+      carPhotoFront, carPhotoBack, carPhotoRight, carPhotoLeft
+    } = req.body;
 
     // Server-side validation
     if (name !== undefined && name.trim().length < 3) {
@@ -68,6 +74,25 @@ router.patch('/me', authenticateToken, async (req: AuthRequest, res) => {
         ...(phone !== undefined && { phone: phone.trim() }),
         ...(gender !== undefined && { gender }),
         ...(dob !== undefined && { dob }),
+        ...(licenseExpiry !== undefined && { licenseExpiry }),
+        ...(plateNumber !== undefined && { plateNumber }),
+        ...(criminalRecordCert !== undefined && { criminalRecordCert }),
+        ...(driverPhoto !== undefined && { driverPhoto }),
+        ...(nationalIdCard !== undefined && { nationalIdCard }),
+        ...(taxCard !== undefined && { taxCard }),
+        ...(workshopLocation !== undefined && { workshopLocation }),
+        ...(ownerNationalIdCard !== undefined && { ownerNationalIdCard }),
+        ...(workshopName !== undefined && { workshopName }),
+        ...(userPlateNumber !== undefined && { userPlateNumber }),
+        ...(userNationalId !== undefined && { userNationalId }),
+        ...(carBrand !== undefined && { carBrand }),
+        ...(carModel !== undefined && { carModel }),
+        ...(carYear !== undefined && { carYear: carYear ? parseInt(carYear.toString()) : null }),
+        ...(chassisNumber !== undefined && { chassisNumber }),
+        ...(carPhotoFront !== undefined && { carPhotoFront }),
+        ...(carPhotoBack !== undefined && { carPhotoBack }),
+        ...(carPhotoRight !== undefined && { carPhotoRight }),
+        ...(carPhotoLeft !== undefined && { carPhotoLeft }),
       },
       select: {
         id: true,
@@ -77,12 +102,34 @@ router.patch('/me', authenticateToken, async (req: AuthRequest, res) => {
         phone: true,
         gender: true,
         dob: true,
-        walletBalance: true
+        walletBalance: true,
+        approvalStatus: true,
+        commissionOwed: true,
+        licenseExpiry: true,
+        plateNumber: true,
+        criminalRecordCert: true,
+        driverPhoto: true,
+        nationalIdCard: true,
+        taxCard: true,
+        workshopLocation: true,
+        ownerNationalIdCard: true,
+        workshopName: true,
+        userPlateNumber: true,
+        userNationalId: true,
+        carBrand: true,
+        carModel: true,
+        carYear: true,
+        chassisNumber: true,
+        carPhotoFront: true,
+        carPhotoBack: true,
+        carPhotoRight: true,
+        carPhotoLeft: true,
       }
     });
 
     res.json(updated);
   } catch (error) {
+    console.error('PATCH /me error:', error);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -185,8 +232,36 @@ router.post('/register', async (req, res) => {
     
     let user;
     if (role === 'WORKSHOP_OWNER') {
+      let defaultWorkshopLocation = (workshopLocation && workshopLocation.trim()) || 'Cairo, Egypt';
       const defaultWorkshopName = (workshopName && workshopName.trim()) || `${(name && name.trim()) || 'Test'}'s Workshop`;
-      const defaultWorkshopLocation = (workshopLocation && workshopLocation.trim()) || 'Cairo, Egypt';
+      let lat: number | null = null;
+      let lng: number | null = null;
+
+      if (defaultWorkshopLocation.includes('|')) {
+        const parts = defaultWorkshopLocation.split('|');
+        const addressPart = parts[0].trim();
+        const coordsPart = parts[1].trim();
+        const coordParts = coordsPart.split(',');
+        if (coordParts.length === 2) {
+          const parsedLat = parseFloat(coordParts[0].trim());
+          const parsedLng = parseFloat(coordParts[1].trim());
+          if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+            defaultWorkshopLocation = addressPart;
+            lat = parsedLat;
+            lng = parsedLng;
+          }
+        }
+      } else if (defaultWorkshopLocation.includes(',')) {
+        const coordParts = defaultWorkshopLocation.split(',');
+        if (coordParts.length === 2) {
+          const parsedLat = parseFloat(coordParts[0].trim());
+          const parsedLng = parseFloat(coordParts[1].trim());
+          if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+            lat = parsedLat;
+            lng = parsedLng;
+          }
+        }
+      }
 
       const result = await prisma.$transaction(async (tx) => {
         const createdUser = await tx.user.create({
@@ -209,6 +284,8 @@ router.post('/register', async (req, res) => {
           data: {
             name: defaultWorkshopName,
             address: defaultWorkshopLocation,
+            latitude: lat,
+            longitude: lng,
             services: JSON.stringify(['General Maintenance', 'Inspection']),
             ownerId: createdUser.id,
             image: 'https://images.unsplash.com/photo-1625047509168-a7026f36de04?auto=format&fit=crop&q=80', // Default image

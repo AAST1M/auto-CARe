@@ -35,25 +35,25 @@ test.describe('Upcoming Appointment Card on Home View', () => {
     // Refresh the page to sync the frontend state with the newly created booking
     await page.reload();
 
-    // 4. Verify the Upcoming Appointment card is visible
-    await expect(page.locator('h3:has-text("Upcoming Appointment")')).toBeVisible();
+    // 4. Verify the Upcoming Appointment card is visible (wait up to 15s for API fetch)
+    await expect(page.locator('h3:has-text("Upcoming Appointment")')).toBeVisible({ timeout: 15000 });
     
     // The workshop name should be visible inside the card
-    await expect(page.locator('h4:has-text("Al-Ahlia Mechanics")').first()).toBeVisible();
+    await expect(page.locator('h4:has-text("Al-Ahlia Mechanics")').first()).toBeVisible({ timeout: 10000 });
 
     // 5. Click "View Details" and verify the modal opens
     await page.click('button:has-text("View Details")');
     
-    // The modal should display the booking details title
-    await expect(page.locator('h2:has-text("Booking Details")')).toBeVisible();
+    // The modal should display the appointment details title
+    await expect(page.locator('h3:has-text("Appointment Details")')).toBeVisible();
     
     // And it should mention Al-Ahlia Mechanics
-    await expect(page.locator('h3:has-text("Al-Ahlia Mechanics")').last()).toBeVisible();
+    await expect(page.locator('span:has-text("Al-Ahlia Mechanics")').first()).toBeVisible();
     
     // Close the modal
-    await page.click('button[aria-label="Close"]');
+    await page.click('button:has-text("Close")');
     
     // Verify the modal is closed
-    await expect(page.locator('h2:has-text("Booking Details")')).toBeHidden();
+    await expect(page.locator('h3:has-text("Appointment Details")')).toBeHidden();
   });
 });

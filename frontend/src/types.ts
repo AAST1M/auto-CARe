@@ -5,7 +5,7 @@ export enum View {
   FORGOT_PASSWORD = 'FORGOT_PASSWORD',
   USER_DETAILS = 'USER_DETAILS',
   ROLE_SELECTION = 'ROLE_SELECTION',
-  
+
   // Specific Onboarding
   SETUP_CAR = 'SETUP_CAR', // User
   WINCH_ONBOARDING = 'WINCH_ONBOARDING', // Winch
@@ -97,15 +97,15 @@ export interface UserBooking {
 }
 
 export interface WorkshopAppointment {
-    id: string;
-    customerName: string;
-    carDetails: string;
-    serviceType: string;
-    time: string;
-    status: 'Pending' | 'Confirmed' | 'Checked-In' | 'Completed' | 'Cancelled' | 'Repairing' | 'Quality Check' | 'Ready' | string;
-    price: number;
-    workshop?: any;
-    progress?: number;
+  id: string;
+  customerName: string;
+  carDetails: string;
+  serviceType: string;
+  time: string;
+  status: 'Pending' | 'Confirmed' | 'Checked-In' | 'Completed' | 'Cancelled' | 'Repairing' | 'Quality Check' | 'Ready' | string;
+  price: number;
+  workshop?: any;
+  progress?: number;
 }
 
 export interface UserProfile {
@@ -119,7 +119,7 @@ export interface UserProfile {
   walletBalance: number; // For Drivers/Owners
   commissionOwed?: number; // For Drivers
   approvalStatus?: string;
-  
+
   // User/Customer Specific
   carBrand?: string;
   carModel?: string;

@@ -675,6 +675,12 @@ const App: React.FC = () => {
             setLiveBookingId(active.id);
             setWinchStatus('confirmed');
             navigate(View.WINCH_LIVE_MAP);
+          } else {
+            // Redirect to home if they refreshed on /winch/live-map but have no active booking
+            if (window.location.pathname === '/winch/live-map') {
+              const role = user?.role || authContext.user?.role;
+              navigate(role === UserRole.WINCH_DRIVER ? View.WINCH_DASHBOARD : role === UserRole.WORKSHOP_OWNER ? View.WORKSHOP_DASHBOARD : View.HOME);
+            }
           }
         }
       } catch (e) {
@@ -812,16 +818,9 @@ const App: React.FC = () => {
   const [myWorkshopId, setMyWorkshopId] = useState<string | null>(null);
 
   // Workshop Dashboard State (Owner Side)
-  const [workshopAppointments, setWorkshopAppointments] = useState<WorkshopAppointment[]>([
-    { id: 'a1', customerName: 'Ahmed Ali', carDetails: 'BMW 320i', serviceType: 'Oil Change', time: '10:00 AM', status: 'Pending', price: 1200 },
-    { id: 'a2', customerName: 'Sara H.', carDetails: 'Kia Cerato', serviceType: 'Brake Pads', time: '01:00 PM', status: 'Confirmed', price: 850 },
-    { id: 'a3', customerName: 'Mohamed Salah', carDetails: 'Jeep Wrangler', serviceType: 'Suspension', time: '03:00 PM', status: 'Checked-In', price: 2500 }
-  ]);
+  const [workshopAppointments, setWorkshopAppointments] = useState<WorkshopAppointment[]>([]);
   const [showWorkshopWallet, setShowWorkshopWallet] = useState(false);
-  const [carsInWorkshop, setCarsInWorkshop] = useState([
-    { id: 'c1', model: 'Jeep Wrangler', plate: 'ABD 123', status: 'Diagnostics', progress: 25 },
-    { id: 'c2', model: 'Kia Cerato', plate: 'XYZ 999', status: 'Repairing', progress: 60 }
-  ]);
+  const [carsInWorkshop, setCarsInWorkshop] = useState<{ id: string; model: string; plate: string; status: string; progress: number }[]>([]);
   const [expandedCarId, setExpandedCarId] = useState<string | null>(null);
 
   // Settings State
@@ -3077,7 +3076,7 @@ const App: React.FC = () => {
               </div>
               <span className="text-xs text-slate-600 dark:text-gray-300">AI Doctor</span>
             </button>
-            <button onClick={() => navigate(View.WINCH_NEGOTIATION)} className="flex flex-col items-center gap-2 group">
+            <button onClick={() => navigate(liveBookingId ? View.WINCH_LIVE_MAP : View.WINCH_NEGOTIATION)} className="flex flex-col items-center gap-2 group">
               <div className="w-16 h-16 rounded-2xl glass-panel flex items-center justify-center group-hover:bg-cyber-primary/20 group-hover:border-cyber-primary transition-all">
                 <Truck className="text-cyber-primary dark:text-cyber-accent group-hover:scale-110 transition-transform" />
               </div>
@@ -3173,7 +3172,7 @@ const App: React.FC = () => {
           <MessageSquare size={20} />
           <span className="text-[9px]">AI Doc</span>
         </button>
-        <button className="text-gray-400 hover:text-cyber-primary transition-colors flex flex-col items-center" onClick={() => navigate(View.WINCH_NEGOTIATION)}>
+        <button className="text-gray-400 hover:text-cyber-primary transition-colors flex flex-col items-center" onClick={() => navigate(liveBookingId ? View.WINCH_LIVE_MAP : View.WINCH_NEGOTIATION)}>
           <Truck size={20} />
           <span className="text-[9px]">Winch</span>
         </button>
@@ -4360,7 +4359,7 @@ const App: React.FC = () => {
           <div className="p-6 pt-12 bg-gradient-to-r from-gray-900 to-cyber-900 text-white pb-8 rounded-b-3xl shadow-lg">
             <div className="flex justify-between items-center mb-6">
               <div>
-                <h2 className="text-2xl font-bold font-display">{user.shopName || 'My Workshop'}</h2>
+                <h2 className="text-2xl font-bold font-display">{user.workshopName || 'My Workshop'}</h2>
                 <p className="text-xs text-green-400 flex items-center gap-1"><CheckCircle size={12} /> Verified Partner</p>
               </div>
               <div onClick={() => navigate(View.PROFILE)} className="w-10 h-10 rounded-full bg-gray-700 border border-cyber-primary overflow-hidden">
@@ -4482,7 +4481,7 @@ const App: React.FC = () => {
                 <span className="text-gray-500 text-sm">Available</span>
                 <span className="font-bold text-xl text-slate-900 dark:text-white">{user.walletBalance} EGP</span>
               </div>
-              <button onClick={() => setShowWorkshopWallet(true)} className="w-full py-3 border border-cyber-primary text-cyber-primary rounded-lg font-bold hover:bg-cyber-primary hover:text-white transition">View Wallet</button>
+              <button onClick={() => { authContext.refreshUser(); setShowWorkshopWallet(true); }} className="w-full py-3 border border-cyber-primary text-cyber-primary rounded-lg font-bold hover:bg-cyber-primary hover:text-white transition">View Wallet</button>
             </div>
 
             <div className="glass-panel p-4 rounded-xl">
@@ -4510,7 +4509,7 @@ const App: React.FC = () => {
 
           <div className="p-4 glass-panel flex justify-around items-center">
             <button className="text-cyber-primary flex flex-col items-center"><Calendar size={24} /><span className="text-[10px]">Bookings</span></button>
-            <button className="text-gray-400 flex flex-col items-center" onClick={() => setShowWorkshopWallet(true)}><Wallet size={24} /><span className="text-[10px]">Wallet</span></button>
+            <button className="text-gray-400 flex flex-col items-center" onClick={() => { authContext.refreshUser(); setShowWorkshopWallet(true); }}><Wallet size={24} /><span className="text-[10px]">Wallet</span></button>
             <button className="text-gray-400 flex flex-col items-center" onClick={() => navigate(View.PROFILE)}><User size={24} /><span className="text-[10px]">Profile</span></button>
           </div>
         </>
@@ -4727,7 +4726,7 @@ const App: React.FC = () => {
               </div>
             </div>
             {msg.action === 'WINCH' && (
-               <button onClick={() => { setWinchStatus('idle'); navigate(View.WINCH_NEGOTIATION); }} className="mt-2 text-sm bg-red-500 text-white px-4 py-2 rounded-lg shadow-md hover:bg-red-600 transition-colors">Request Emergency Winch</button>
+               <button onClick={() => { if (liveBookingId) { navigate(View.WINCH_LIVE_MAP); } else { setWinchStatus('idle'); navigate(View.WINCH_NEGOTIATION); } }} className="mt-2 text-sm bg-red-500 text-white px-4 py-2 rounded-lg shadow-md hover:bg-red-600 transition-colors">Request Emergency Winch</button>
             )}
             {msg.action === 'WORKSHOP' && (
                <button onClick={() => navigate(View.WORKSHOP_LIST)} className="mt-2 text-sm bg-cyber-primary text-white px-4 py-2 rounded-lg shadow-md hover:bg-blue-600 transition-colors">Find Nearby Workshops</button>
@@ -5026,14 +5025,27 @@ const App: React.FC = () => {
 
   const [editingVehicle, setEditingVehicle] = React.useState(false);
   const [editingProfile, setEditingProfile] = React.useState(false);
-  const [profileName, setProfileName] = React.useState(user.name);
-  const [profileEmail, setProfileEmail] = React.useState(user.email);
-  const [profilePhone, setProfilePhone] = React.useState(user.phone || '');
-  const [profileGender, setProfileGender] = React.useState(user.gender || '');
-  const [profileDob, setProfileDob] = React.useState(user.dob || '');
-  const [vehicleBrand, setVehicleBrand] = React.useState(user.carBrand || '');
-  const [vehicleModel, setVehicleModel] = React.useState(user.carModel || '');
-  const [vehicleLicense, setVehicleLicense] = React.useState('ABC 123');
+  const [profileName, setProfileName] = React.useState(user?.name || '');
+  const [profileEmail, setProfileEmail] = React.useState(user?.email || '');
+  const [profilePhone, setProfilePhone] = React.useState(user?.phone || '');
+  const [profileGender, setProfileGender] = React.useState(user?.gender || '');
+  const [profileDob, setProfileDob] = React.useState(user?.dob || '');
+  const [vehicleBrand, setVehicleBrand] = React.useState(user?.carBrand || '');
+  const [vehicleModel, setVehicleModel] = React.useState(user?.carModel || '');
+  const [vehicleLicense, setVehicleLicense] = React.useState(user?.role === UserRole.WINCH_DRIVER ? (user.plateNumber || '') : (user?.userPlateNumber || ''));
+
+  useEffect(() => {
+    if (user) {
+      setProfileName(user.name || '');
+      setProfileEmail(user.email || '');
+      setProfilePhone(user.phone || '');
+      setProfileGender(user.gender || '');
+      setProfileDob(user.dob || '');
+      setVehicleBrand(user.carBrand || '');
+      setVehicleModel(user.carModel || '');
+      setVehicleLicense(user.role === UserRole.WINCH_DRIVER ? (user.plateNumber || '') : (user.userPlateNumber || ''));
+    }
+  }, [user]);
 
   const renderProfile = () => (
     <div className="flex flex-col h-screen bg-slate-100 dark:bg-black">
@@ -5234,7 +5246,41 @@ const App: React.FC = () => {
               />
               <button
                 className="w-full bg-cyber-primary text-white text-sm font-bold py-2 rounded-lg"
-                onClick={() => setEditingVehicle(false)}
+                onClick={async () => {
+                  const tokenVal = localStorage.getItem('token');
+                  if (!tokenVal) return;
+                  try {
+                    const isDriver = user?.role === UserRole.WINCH_DRIVER;
+                    const res = await fetch(`${API_URL}/api/auth/me`, {
+                      method: 'PATCH',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${tokenVal}`
+                      },
+                      body: JSON.stringify(
+                        isDriver
+                          ? {
+                              carBrand: vehicleBrand,
+                              carModel: vehicleModel,
+                              plateNumber: vehicleLicense
+                            }
+                          : {
+                              carBrand: vehicleBrand,
+                              carModel: vehicleModel,
+                              userPlateNumber: vehicleLicense
+                            }
+                      )
+                    });
+                    if (res.ok) {
+                      const updatedUser = await res.json();
+                      setUser(prev => ({ ...prev, ...updatedUser }));
+                      authContext.login(tokenVal, updatedUser); // sync context
+                      setEditingVehicle(false);
+                    }
+                  } catch (err) {
+                    console.error('Failed to update vehicle', err);
+                  }
+                }}
               >
                 Save Vehicle
               </button>
@@ -6098,7 +6144,16 @@ const App: React.FC = () => {
         {view === View.PROFILE && renderProfile()}
         {view === View.SETTINGS && renderSettings()}
         {view === View.SPARE_PARTS && renderSpareParts()}
-        {view === View.WINCH_LIVE_MAP && liveBookingId && <WinchLiveUser bookingId={liveBookingId} onBack={() => { setLiveBookingId(null); navigate(user.role === UserRole.WINCH_DRIVER ? View.WINCH_DASHBOARD : View.HOME); }} />}
+        {view === View.WINCH_LIVE_MAP && (
+          liveBookingId ? (
+            <WinchLiveUser bookingId={liveBookingId} onBack={() => { setLiveBookingId(null); navigate(user.role === UserRole.WINCH_DRIVER ? View.WINCH_DASHBOARD : View.HOME); }} />
+          ) : (
+            <div className="flex flex-col items-center justify-center h-[calc(100vh-80px)] bg-slate-950 text-white">
+              <div className="w-10 h-10 border-4 border-cyber-primary border-t-transparent rounded-full animate-spin mb-4" />
+              <p className="font-semibold text-sm">Loading live map...</p>
+            </div>
+          )
+        )}
         {/* Admin: only render if user has ADMIN role */}
         {view === View.ADMIN_DASHBOARD && (authUser?.role === 'ADMIN' || user.role === UserRole.ADMIN) && renderAdminDashboard()}
         {view === View.ADMIN_DASHBOARD && authUser?.role !== 'ADMIN' && user.role !== UserRole.ADMIN && renderHome()}

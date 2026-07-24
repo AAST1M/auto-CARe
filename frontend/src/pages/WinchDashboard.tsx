@@ -8,7 +8,7 @@ import { io, Socket } from 'socket.io-client';
 
 export const WinchDashboard = () => {
   const navigate = useNavigate();
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, isLoading } = useAuth();
   const [showWinchWallet, setShowWinchWallet] = React.useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = React.useState(false);
   const [withdrawAmount, setWithdrawAmount] = React.useState('');
@@ -109,8 +109,6 @@ export const WinchDashboard = () => {
 
     socket.on('location_updated', (data: any) => {
       if (data.userLat && data.userLng) setUserLoc({ lat: data.userLat, lng: data.userLng });
-      if (data.eta) setEta(data.eta);
-      if (data.distance) setDistance(data.distance);
     });
 
     socket.on('booking_error', (data: any) => alert(data.message));
@@ -163,9 +161,16 @@ export const WinchDashboard = () => {
           });
         }
         if (data.userLat && data.userLng) setUserLoc({ lat: data.userLat, lng: data.userLng });
+      } else {
+        alert(data?.error || 'Failed to load booking details.');
+        setActiveBookingId(null);
       }
     })
-    .catch(e => console.error('Error fetching booking details for driver:', e));
+    .catch(e => {
+      console.error('Error fetching booking details for driver:', e);
+      alert('Network error: Could not fetch booking details.');
+      setActiveBookingId(null);
+    });
   }, [activeBookingId]);
 
   // Countdown timer for incoming request
@@ -210,6 +215,14 @@ export const WinchDashboard = () => {
       socket.off('location_updated');
     };
   }, [activeBookingId, bookingDetails?.status]);
+
+  if (isLoading || !user) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-black font-sans flex items-center justify-center p-4">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyber-primary"></div>
+      </div>
+    );
+  }
 
   // Go online / offline
   const toggleOnline = () => {
