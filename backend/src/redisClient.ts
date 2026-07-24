@@ -1,4 +1,5 @@
 import { createClient } from 'redis';
+import { logger } from './utils/logger';
 
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 
@@ -11,19 +12,19 @@ let isRedisConnected = false;
 redisClient.on('error', (err) => {
   // We log once and toggle flag to prevent crashing the app if Redis isn't running locally
   if (isRedisConnected) {
-    console.error('Redis Client Error', err);
+    logger.error('Redis Client Error', err);
     isRedisConnected = false;
   }
 });
 
 redisClient.on('connect', () => {
-  console.log('✅ Connected to Redis');
+  logger.info('✅ Connected to Redis');
   isRedisConnected = true;
 });
 
 // Try to connect, but don't crash if it fails
 redisClient.connect().catch(() => {
-  console.warn('⚠️  Could not connect to Redis. Caching will be bypassed. Start Redis to enable caching.');
+  logger.warn('⚠️  Could not connect to Redis. Caching will be bypassed. Start Redis to enable caching.');
   isRedisConnected = false;
 });
 
