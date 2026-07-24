@@ -9,6 +9,7 @@ vi.mock('../config', () => ({
 
 describe('geminiService', () => {
   let originalFetch: typeof global.fetch;
+  let originalStorage: any;
 
   beforeEach(() => {
     // Save original fetch
@@ -18,17 +19,28 @@ describe('geminiService', () => {
     global.fetch = vi.fn();
     
     // Mock localStorage
-    Storage.prototype.getItem = vi.fn(() => 'test-token');
+    const mockStorage = {
+      getItem: vi.fn(() => 'test-token'),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+      clear: vi.fn(),
+      length: 0,
+      key: vi.fn()
+    };
+
+    originalStorage = global.localStorage;
+    global.localStorage = mockStorage as any;
   });
 
   afterEach(() => {
     // Restore original fetch
     global.fetch = originalFetch;
+    global.localStorage = originalStorage;
     vi.clearAllMocks();
   });
 
   it('should successfully diagnose an issue without media', async () => {
-    const mockResponse = { response: 'The issue is a flat tire.' };
+    const mockResponse = { reply: 'The issue is a flat tire.', action: null };
     (global.fetch as any).mockResolvedValueOnce({
       ok: true,
       json: async () => mockResponse,
@@ -43,13 +55,13 @@ describe('geminiService', () => {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer test-token'
       },
-      body: JSON.stringify({ symptom, media: undefined })
+      body: JSON.stringify({ symptom, media: undefined, language: 'ar' })
     });
-    expect(result).toBe(mockResponse.response);
+    expect(result.reply).toBe(mockResponse.reply);
   });
 
   it('should successfully diagnose an issue with media', async () => {
-    const mockResponse = { response: 'The issue is a broken belt.' };
+    const mockResponse = { reply: 'The issue is a broken belt.', action: null };
     (global.fetch as any).mockResolvedValueOnce({
       ok: true,
       json: async () => mockResponse,
@@ -65,20 +77,20 @@ describe('geminiService', () => {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer test-token'
       },
-      body: JSON.stringify({ symptom, media })
+      body: JSON.stringify({ symptom, media, language: 'ar' })
     });
-    expect(result).toBe(mockResponse.response);
+    expect(result.reply).toBe(mockResponse.reply);
   });
 
   it('should handle a missing token in localStorage', async () => {
-    const mockResponse = { response: 'Test response' };
+    const mockResponse = { reply: 'Test response', action: null };
     (global.fetch as any).mockResolvedValueOnce({
       ok: true,
       json: async () => mockResponse,
     });
     
     // Override getItem for this test specifically
-    Storage.prototype.getItem = vi.fn(() => null);
+    global.localStorage.getItem = vi.fn(() => null);
 
     const result = await diagnoseCarIssue('test');
 
@@ -88,9 +100,9 @@ describe('geminiService', () => {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer '
       },
-      body: JSON.stringify({ symptom: 'test', media: undefined })
+      body: JSON.stringify({ symptom: 'test', media: undefined, language: 'ar' })
     });
-    expect(result).toBe(mockResponse.response);
+    expect(result.reply).toBe(mockResponse.reply);
   });
 
   it('should handle HTTP errors gracefully', async () => {
@@ -103,7 +115,7 @@ describe('geminiService', () => {
 
     const result = await diagnoseCarIssue('engine light on');
 
-    expect(result).toBe("Connection to AI Core interrupted. Please check your network or try again later.");
+    expect(result.reply).toBe("Connection to AI Core interrupted. Please check your network or try again later.");
     expect(consoleSpy).toHaveBeenCalled();
     
     consoleSpy.mockRestore();
@@ -117,7 +129,7 @@ describe('geminiService', () => {
 
     const result = await diagnoseCarIssue('engine light on');
 
-    expect(result).toBe("I'm having trouble analyzing that right now.");
+    expect(result.reply).toBe("I'm having trouble analyzing that right now.");
   });
 
   it('should handle network errors gracefully', async () => {
@@ -127,7 +139,7 @@ describe('geminiService', () => {
 
     const result = await diagnoseCarIssue('engine light on');
 
-    expect(result).toBe("Connection to AI Core interrupted. Please check your network or try again later.");
+    expect(result.reply).toBe("Connection to AI Core interrupted. Please check your network or try again later.");
     expect(consoleSpy).toHaveBeenCalled();
     
     consoleSpy.mockRestore();
